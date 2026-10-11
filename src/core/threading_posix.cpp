@@ -9,7 +9,7 @@
 #include <rex/platform.h>
 #include <rex/thread.h>
 
-static_assert(REX_PLATFORM_LINUX || REX_PLATFORM_MAC, "This file is POSIX-only");
+static_assert(REX_PLATFORM_LINUX || REX_PLATFORM_MAC || REX_PLATFORM_PS5, "This file is POSIX-only");
 
 #include <signal.h>
 
@@ -25,6 +25,16 @@ static_assert(REX_PLATFORM_LINUX || REX_PLATFORM_MAC, "This file is POSIX-only")
 #include <pthread.h>
 #include <semaphore.h>
 
+#if REX_PLATFORM_PS5
+// PS5: FreeBSD's thread extensions, and the platform layer's affinity calls
+// (FreeBSD's 32-byte cpuset_t gets ERANGE from the console's own;
+// PS5_PayloadSDK platform/docs/PROBE.md, "Threads").
+#include <pthread_np.h>
+#include <sys/cpuset.h>
+
+#include <ps5platform/libc.h>
+#endif
+
 #if defined(__APPLE__)
 #include <cstdio>
 
@@ -38,6 +48,7 @@ static_assert(REX_PLATFORM_LINUX || REX_PLATFORM_MAC, "This file is POSIX-only")
 #include <rex/assert.h>
 #include <rex/chrono/chrono_steady_cast.h>
 #include <rex/logging.h>
+#include <rex/string.h>
 #include <rex/thread/timer_queue.h>
 
 #include <sched.h>
@@ -115,9 +126,11 @@ enum class SignalType {
 };
 
 int GetSystemSignal(SignalType num) {
-#if defined(__APPLE__)
+#if defined(__APPLE__) || REX_PLATFORM_PS5
   // macOS has no realtime signals (SIGRTMIN..SIGRTMAX); map the runtime's
-  // signals onto the two user-defined signals.
+  // signals onto the two user-defined signals. The PS5's headers define
+  // SIGRTMIN, but delivery of realtime signals to a chosen thread is unproven
+  // on the console, and these two are all the runtime needs.
   switch (num) {
     case SignalType::kThreadSuspend:
       return SIGUSR1;
@@ -135,7 +148,7 @@ int GetSystemSignal(SignalType num) {
 }
 
 SignalType GetSystemSignalType(int num) {
-#if defined(__APPLE__)
+#if defined(__APPLE__) || REX_PLATFORM_PS5
   switch (num) {
     case SIGUSR1:
       return SignalType::kThreadSuspend;
@@ -178,6 +191,8 @@ void EnableAffinityConfiguration() {}
 uint32_t current_thread_system_id() {
 #if defined(__APPLE__)
   return static_cast<uint32_t>(pthread_mach_thread_np(pthread_self()));
+#elif REX_PLATFORM_PS5
+  return static_cast<uint32_t>(pthread_getthreadid_np());
 #else
   return static_cast<uint32_t>(syscall(SYS_gettid));
 #endif
@@ -718,6 +733,9 @@ class PosixCondition<Thread> : public PosixConditionBase {
         std::lock_guard<std::mutex> lock(android_pre_api_26_name_mutex_);
         rex::string::copy_truncating(result.data(), android_pre_api_26_name_, result.size());
       }
+#elif REX_PLATFORM_PS5
+      // PS5: the SDK declares no pthread_getname_np; the name set_name gave.
+      rex::string::copy_truncating(result.data(), ps5_name_, result.size());
 #else
       if (pthread_getname_np(thread_, result.data(), result.size() - 1) != 0) {
         assert_always();
@@ -736,6 +754,11 @@ class PosixCondition<Thread> : public PosixConditionBase {
       if (pthread_equal(thread_, pthread_self())) {
         pthread_setname_np(std::string(name).c_str());
       }
+#elif REX_PLATFORM_PS5
+      // PS5: FreeBSD's name call is libkernel's; pthread_setname_np is only
+      // in a module a title does not load.
+      pthread_set_name_np(thread_, std::string(name).c_str());
+      rex::string::copy_truncating(ps5_name_, name, rex::countof(ps5_name_));
 #else
       pthread_setname_np(thread_, std::string(name).c_str());
 #endif
@@ -758,6 +781,10 @@ class PosixCondition<Thread> : public PosixConditionBase {
 
 #if defined(__APPLE__)
   uint32_t system_id() const { return static_cast<uint32_t>(pthread_mach_thread_np(thread_)); }
+#elif REX_PLATFORM_PS5
+  // PS5: pthread_t is a pointer; the kernel's id, which the thread records as
+  // it starts (ThreadStartRoutine), is what the console's logs name.
+  uint32_t system_id() const { return ps5_thread_id_.load(std::memory_order_acquire); }
 #else
   uint32_t system_id() const { return static_cast<uint32_t>(thread_); }
 #endif
@@ -772,6 +799,20 @@ class PosixCondition<Thread> : public PosixConditionBase {
       return std::numeric_limits<uint64_t>::max();
     }
     return (uint64_t(1) << cpu_count) - 1;
+#elif REX_PLATFORM_PS5
+    // A title's threads run on CPUs 0 to 12 (PROBE.md, "Threads").
+    cpuset_t cpu_set;
+    CPU_ZERO(&cpu_set);
+    if (ps5_pthread_getaffinity_np(thread_, sizeof(cpu_set), &cpu_set) != 0) {
+      assert_always();
+    }
+    uint64_t result = 0;
+    for (auto i = 0u; i < 64 && i < CPU_SETSIZE; i++) {
+      if (CPU_ISSET(i, &cpu_set)) {
+        result |= uint64_t(1) << i;
+      }
+    }
+    return result;
 #else
     cpu_set_t cpu_set;
 #if REX_PLATFORM_ANDROID
@@ -799,6 +840,17 @@ class PosixCondition<Thread> : public PosixConditionBase {
     // macOS doesn't expose Linux-style pthread affinity masks; keep this a
     // no-op so higher layers can build and run.
     (void)mask;
+#elif REX_PLATFORM_PS5
+    cpuset_t cpu_set;
+    CPU_ZERO(&cpu_set);
+    for (auto i = 0u; i < 64 && i < CPU_SETSIZE; i++) {
+      if (mask & (1ULL << i)) {
+        CPU_SET(i, &cpu_set);
+      }
+    }
+    if (ps5_pthread_setaffinity_np(thread_, sizeof(cpu_set), &cpu_set) != 0) {
+      assert_always();
+    }
 #else
     cpu_set_t cpu_set;
     CPU_ZERO(&cpu_set);
@@ -868,9 +920,10 @@ class PosixCondition<Thread> : public PosixConditionBase {
       return;
     }
 
-#if defined(__APPLE__)
+#if defined(__APPLE__) || REX_PLATFORM_PS5
     // macOS has no sigqueue/pthread_sigqueue; pthread_kill delivers the signal
-    // without the sigval payload.
+    // without the sigval payload. The PS5 has no pthread_sigqueue, and its
+    // sigqueue is FreeBSD's, aimed at a process; the handler needs no payload.
     int result = pthread_kill(thread_, GetSystemSignal(SignalType::kThreadUserCallback));
 #else
     sigval value{};
@@ -1043,6 +1096,10 @@ class PosixCondition<Thread> : public PosixConditionBase {
   mutable std::condition_variable state_signal_;
   std::deque<std::function<void()>> user_callbacks_;
   std::atomic<bool> has_pending_user_callbacks_{false};
+#if REX_PLATFORM_PS5
+  char ps5_name_[16] = {};
+  std::atomic<uint32_t> ps5_thread_id_{0};
+#endif
 #if REX_PLATFORM_ANDROID
   // Name accessible via name() on Android before API 26 which added
   // pthread_getname_np.
@@ -1417,6 +1474,10 @@ void* PosixCondition<Thread>::ThreadStartRoutine(void* parameter) {
 
   current_thread_ = thread;
   current_thread_condition_ = &thread->handle_;
+#if REX_PLATFORM_PS5
+  thread->handle_.ps5_thread_id_.store(static_cast<uint32_t>(pthread_getthreadid_np()),
+                                       std::memory_order_release);
+#endif
   {
     std::unique_lock<std::mutex> lock(thread->handle_.state_mutex_);
     thread->handle_.state_ = create_suspended ? State::kSuspended : State::kRunning;
@@ -1511,6 +1572,8 @@ void Thread::Exit(int exit_code) {
 void set_current_thread_name(const std::string_view name) {
 #if defined(__APPLE__)
   pthread_setname_np(std::string(name).c_str());
+#elif REX_PLATFORM_PS5
+  pthread_set_name_np(pthread_self(), std::string(name).c_str());
 #else
   pthread_setname_np(pthread_self(), std::string(name).c_str());
 #endif
