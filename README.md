@@ -18,9 +18,12 @@ below this section is upstream's README, unchanged.
   FreeBSD's thread ids, names, affinity calls and machine context; thread suspend and
   wakeup use `SIGUSR1`/`SIGUSR2` with `pthread_kill`, as on macOS.
 - **Status:** the runtime compiles, and every symbol it needs resolves against the
-  modules a title links. Guest memory (`shm_open` views, charged to the console's small
+  modules a title links. EdgeOfTimeRecomp's `ps5/probe` has checked on a console what
+  the thread signals and the exception handler rely on; fibers are a stack switch of
+  the fork's own (`src/core/fiber_switch_x64.h`), since the console's `makecontext`
+  is unusable. Guest memory (`shm_open` views, charged to the console's small
   flexible budget) and the MMIO handler's reads of execute-only code still need their
-  PS5 versions, and nothing has run on a console yet.
+  PS5 versions, and the runtime itself has not run on a console yet.
 - **Keeping in step:** upstream is merged in, never rebased onto.
 
 > [!CAUTION]

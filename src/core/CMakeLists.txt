@@ -74,6 +74,11 @@ elseif(UNIX)
         system_posix.cpp
         threading_posix.cpp
     )
+    if(PROSPERO)
+        # PS5: fibers are a stack switch of their own (fiber_posix.cpp builds
+        # nothing there; the console's makecontext is unusable)
+        target_sources(rexcore PRIVATE fiber_ps5.cpp)
+    endif()
 endif()
 
 # Xenos data-format layer (stateless; headers under include/rex/graphics/).
