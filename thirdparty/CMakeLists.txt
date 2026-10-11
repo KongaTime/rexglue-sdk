@@ -695,6 +695,13 @@ if(WIN32)
     target_link_libraries(libavcodec PRIVATE bcrypt)
 endif()
 
+# PS5: FFmpeg ships no configuration for the console; ffmpeg-overlay/ps5/config.h
+# is found ahead of FFmpeg's own config.h.
+if(PROSPERO)
+    target_include_directories(libavutil BEFORE PRIVATE "${FFMPEG_OVERLAY_SRC_DIR}/ps5")
+    target_include_directories(libavcodec BEFORE PRIVATE "${FFMPEG_OVERLAY_SRC_DIR}/ps5")
+endif()
+
 # Hidden visibility is required on aarch64. The NEON .S files use ADRP/ADD
 # PC-relative addressing (movrel) for symbols like ff_cos_*, which the linker
 # only accepts against locally bound symbols when emitting a shared object.

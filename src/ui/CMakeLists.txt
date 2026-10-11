@@ -72,6 +72,9 @@ elseif(APPLE)
     set(REXUI_PLATFORM_SOURCES
         surface_mac.cpp
     )
+elseif(PROSPERO)
+    # PS5: no window system, so no X11/Wayland surfaces (window_sdl.cpp)
+    set(REXUI_PLATFORM_SOURCES)
 else()
     set(REXUI_PLATFORM_SOURCES
         surface_gnulinux.cpp
@@ -146,7 +149,7 @@ if(REXGLUE_USE_VULKAN)
 endif()
 
 # Platform-specific dependencies
-if(UNIX AND NOT APPLE)
+if(UNIX AND NOT APPLE AND NOT PROSPERO)
     find_package(PkgConfig REQUIRED)
     pkg_check_modules(X11_XCB REQUIRED x11-xcb)
     # Required, not optional: vulkan/api.h pulls in <wayland-client.h> on every

@@ -100,6 +100,9 @@ target_include_directories(rexcore PRIVATE
 
 if(APPLE)
     target_link_libraries(rexcore PRIVATE pthread)
+elseif(PROSPERO)
+    # PS5: pthreads are in the SDK's libc and libkernel, which the compiler
+    # wrapper links; there is no librt or libdl.
 elseif(UNIX)
     target_link_libraries(rexcore PRIVATE pthread rt dl)
 endif()

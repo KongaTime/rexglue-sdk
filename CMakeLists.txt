@@ -158,6 +158,14 @@ if(WIN32)
         message(FATAL_ERROR "Unsupported Windows architecture: ${REX_TARGET_PROCESSOR}")
     endif()
     add_compile_definitions(REX_PLATFORM_WINDOWS=1)
+elseif(PROSPERO)
+    # PS5 homebrew, built with the payload SDK's toolchain (toolchain/prospero.cmake
+    # sets PROSPERO). FreeBSD-like underneath but not Linux: include/rex/platform.h
+    # defines REX_PLATFORM_PS5 from the compiler's __PROSPERO__.
+    set(REX_PLATFORM "ps5-amd64")
+    # The SDK's libc++ 18 keeps std::jthread and std::stop_token (timer_queue.cpp)
+    # behind -fexperimental-library; a title links libc++experimental.a.
+    add_compile_options($<$<COMPILE_LANGUAGE:CXX>:-fexperimental-library>)
 elseif(UNIX AND NOT APPLE)
     if(REX_TARGET_PROCESSOR MATCHES "AMD64|x86_64")
         set(REX_PLATFORM "linux-amd64")
@@ -285,8 +293,9 @@ message(STATUS "  Tracy: ${REXGLUE_ENABLE_TRACY}")
 message(STATUS "  Perf Counters: ${REXGLUE_ENABLE_PERF_COUNTERS}")
 message(STATUS "===========================================")
 
-# SDK install/export rules (skipped when consumed as a subdirectory)
-if(PROJECT_IS_TOP_LEVEL)
+# SDK install/export rules (skipped when consumed as a subdirectory, and for the
+# PS5, whose static runtime is only ever linked into a title from a build tree)
+if(PROJECT_IS_TOP_LEVEL AND NOT PROSPERO)
     include(cmake/rexglue_devenv.cmake)
     include(cmake/rexglue_install.cmake)
 else()
