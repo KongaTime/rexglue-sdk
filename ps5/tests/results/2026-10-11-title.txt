@@ -1,0 +1,44 @@
+==== memory_ps5_test ====
+page size 16384, allocation granularity 65536
+direct memory: 12288 MiB; largest free block 12268 MiB (query 0x00000000); flexible free 417 MiB
+this process took 2048 MiB of direct memory in 64 KiB allocations, the test's cap (0x00000000)
+PASS CreateFileMappingHandle(4.5 GiB) without commit
+PASS no direct memory backs it yet
+arena at 1000000000
+PASS all nine views map at 0x10_0000_0000
+PASS an uncommitted page of a view faults
+PASS QueryProtect says no access there
+the 512 MiB commit took 25.5 ms and made 256 direct-memory objects
+PASS commit the physical heap's 512 MiB
+PASS it is backed in 256 chunks of 2 MiB
+PASS write physical memory through the raw view
+PASS 0xA0000000 sees physical memory
+PASS 0xC0000000 sees physical memory
+PASS 0xE0000000 sees physical memory
+PASS 0x7F000000 sees physical memory
+PASS a write through 0xC0000000 lands in physical memory
+PASS commit 64 KiB in the 0x40000000 heap
+PASS it backs one chunk
+PASS the committed page is writable
+PASS QueryProtect says read-write
+PASS a page in another, unbacked chunk still faults
+PASS commit in the 0x80000000 xex heap
+PASS 0x90000000 sees the 0x80000000 heap's memory
+PASS Protect a 0xA0000000 page read-only, reporting it was read-write
+PASS writing it faults
+PASS reading it does not
+PASS the same memory is still writable through the raw view
+PASS QueryProtect says read-only, for one page
+PASS restoring the old protection makes it writable again
+PASS an MMIO window committed with no access faults
+PASS decommit takes the access away
+PASS recommitting keeps the contents
+(record) sceKernelQueryMemoryProtection on a view page: 0x00000000, 10a0000000-10c0000000, protection 0x3
+PASS anonymous reserve+commit is writable
+PASS and released
+PASS an anonymous reservation faults
+PASS committing part of it makes that part writable
+PASS and released
+PASS every view unmaps
+PASS no direct-memory objects, views, ranges or committed units are left
+==== 0 failed ====

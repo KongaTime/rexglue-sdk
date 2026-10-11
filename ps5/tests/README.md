@@ -37,3 +37,8 @@ Each one builds three ways:
   place of `main()` and writes `/app0/rexglue-memory-test.txt`.
   [PS5_EdgeOfTimeTitle](https://github.com/KongaTime/PS5_EdgeOfTimeTitle)'s program
   runs it.
+
+  On the console (2026-10-11, PS5_EdgeOfTimeTitle `6f90a64`, `results/2026-10-11-title.txt`),
+  all of it passed: the title has 12288 MiB of direct memory and 417 MiB of free
+  flexible memory, and the physical heap's 512 MiB commit took 25.5 ms (256 chunks).
+  No-access protection holds on the shared views, and so does protection per view.
