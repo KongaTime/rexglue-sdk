@@ -1,3 +1,28 @@
+## About this fork
+
+This fork, **KongaTime/rexglue-sdk**, adds the PS5 (payload SDK homebrew) as a target
+to the [ReXGlue SDK](https://github.com/rexglue/rexglue-sdk), for
+[EdgeOfTimeRecomp](https://github.com/KongaTime/EdgeOfTimeRecomp) on the console
+(its `docs/PS5-PORTING.md` is the plan). Desktop builds are unchanged: every PS5 change
+is behind a PS5 check. ReXGlue is upstream's project and gets the credit; everything
+below this section is upstream's README, unchanged.
+
+- **Base:** upstream's v0.10.0 (`c94f5eb`), the version EdgeOfTimeRecomp pins.
+- **Target:** built with [PS5_PayloadSDK](https://github.com/KongaTime/PS5_PayloadSDK)'s
+  CMake toolchain (`toolchain/prospero.cmake`), which sets `PROSPERO`; the compiler
+  defines `__PROSPERO__`, from which `include/rex/platform.h` defines
+  `REX_PLATFORM_PS5`. Every PS5 change sits behind one of those.
+- **What changes on the console:** the runtime is a static library (no `dlopen`, and a
+  title exports nothing); no Xenos GPU plugin, codegen or CLI (they run on the PC);
+  no X11/Wayland; FFmpeg gets a configuration for the console; the POSIX sources take
+  FreeBSD's thread ids, names, affinity calls and machine context; thread suspend and
+  wakeup use `SIGUSR1`/`SIGUSR2` with `pthread_kill`, as on macOS.
+- **Status:** the runtime compiles, and every symbol it needs resolves against the
+  modules a title links. Guest memory (`shm_open` views, charged to the console's small
+  flexible budget) and the MMIO handler's reads of execute-only code still need their
+  PS5 versions, and nothing has run on a console yet.
+- **Keeping in step:** upstream is merged in, never rebased onto.
+
 > [!CAUTION]
 > This project is in early development. Expect things to not work quite right and there to be significant changes and breaking public API updates as development progresses. Contributions and feedback are welcome, but please be aware that the codebase is still evolving rapidly.
 
