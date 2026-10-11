@@ -17,7 +17,7 @@
 
 #include <rex/exception_handler.h>
 
-#if REX_PLATFORM_LINUX || REX_PLATFORM_MAC
+#if REX_PLATFORM_LINUX || REX_PLATFORM_MAC || REX_PLATFORM_PS5
 
 #include <signal.h>
 
@@ -31,13 +31,32 @@
 
 #include <ucontext.h>
 
+#if REX_PLATFORM_PS5
+// FreeBSD's amd64 machine context (mc_rip, mc_err, an fxsave image in
+// mc_fpstate), at the place the console puts it: the payload SDK fork's
+// sys/_ucontext.h carries the console's extra 48 bytes, and context.h refuses
+// to build against a header without them.
+#include <machine/fpu.h>
+
+#include <ps5platform/context.h>
+#endif
+
 namespace rex::arch {
 
 bool signal_handlers_installed_ = false;
 struct sigaction original_sigill_handler_;
 struct sigaction original_sigsegv_handler_;
-#if REX_PLATFORM_MAC
+#if REX_PLATFORM_MAC || REX_PLATFORM_PS5
 struct sigaction original_sigbus_handler_;
+#endif
+
+#if REX_PLATFORM_PS5
+// The XMM registers in the fxsave image FreeBSD keeps in mc_fpstate.
+static vec128_t* Ps5XmmRegisters(mcontext_t& mcontext) {
+  static_assert(sizeof(mcontext.mc_fpstate) >= sizeof(struct savefpu));
+  return reinterpret_cast<vec128_t*>(
+      reinterpret_cast<struct savefpu*>(mcontext.mc_fpstate)->sv_xmm);
+}
 #endif
 
 // This can be as large as needed, but isn't often needed.
@@ -84,6 +103,27 @@ static void ExceptionHandlerCallback(int signal_number, siginfo_t* signal_info,
   thread_context.r14 = uint64_t(mcontext->__ss.__r14);
   thread_context.r15 = uint64_t(mcontext->__ss.__r15);
   std::memcpy(thread_context.xmm_registers, &mcontext->__fs.__fpu_xmm0,
+              sizeof(thread_context.xmm_registers));
+#elif REX_PLATFORM_PS5
+  thread_context.rip = uint64_t(mcontext.mc_rip);
+  thread_context.eflags = uint32_t(mcontext.mc_rflags);
+  thread_context.rax = uint64_t(mcontext.mc_rax);
+  thread_context.rcx = uint64_t(mcontext.mc_rcx);
+  thread_context.rdx = uint64_t(mcontext.mc_rdx);
+  thread_context.rbx = uint64_t(mcontext.mc_rbx);
+  thread_context.rsp = uint64_t(mcontext.mc_rsp);
+  thread_context.rbp = uint64_t(mcontext.mc_rbp);
+  thread_context.rsi = uint64_t(mcontext.mc_rsi);
+  thread_context.rdi = uint64_t(mcontext.mc_rdi);
+  thread_context.r8 = uint64_t(mcontext.mc_r8);
+  thread_context.r9 = uint64_t(mcontext.mc_r9);
+  thread_context.r10 = uint64_t(mcontext.mc_r10);
+  thread_context.r11 = uint64_t(mcontext.mc_r11);
+  thread_context.r12 = uint64_t(mcontext.mc_r12);
+  thread_context.r13 = uint64_t(mcontext.mc_r13);
+  thread_context.r14 = uint64_t(mcontext.mc_r14);
+  thread_context.r15 = uint64_t(mcontext.mc_r15);
+  std::memcpy(thread_context.xmm_registers, Ps5XmmRegisters(mcontext),
               sizeof(thread_context.xmm_registers));
 #else
   thread_context.rip = uint64_t(mcontext.gregs[REG_RIP]);
@@ -171,7 +211,10 @@ static void ExceptionHandlerCallback(int signal_number, siginfo_t* signal_info,
       // On macOS, SIGBUS (KERN_PROTECTION_FAILURE) is raised for writes to
       // read-protected pages — the same scenario that raises SIGSEGV on Linux.
       // Fall through to treat it as an access violation.
-#if !REX_PLATFORM_MAC
+      // FreeBSD (the PS5) may raise SIGBUS for an access to a protected page
+      // too (its machdep.prot_fault_translation): treat it like macOS until
+      // the console is measured.
+#if !REX_PLATFORM_MAC && !REX_PLATFORM_PS5
       // On non-Mac POSIX, SIGBUS is a bus error (misaligned access), not a
       // protection fault — don't handle it here.
       assert_unhandled_case(signal_number);
@@ -185,6 +228,10 @@ static void ExceptionHandlerCallback(int signal_number, siginfo_t* signal_info,
       constexpr uint64_t kX86PageFaultErrorCodeWrite = UINT64_C(1) << 1;
 #if REX_PLATFORM_MAC
       access_violation_operation = (uint64_t(mcontext->__es.__err) & kX86PageFaultErrorCodeWrite)
+                                       ? Exception::AccessViolationOperation::kWrite
+                                       : Exception::AccessViolationOperation::kRead;
+#elif REX_PLATFORM_PS5
+      access_violation_operation = (uint64_t(mcontext.mc_err) & kX86PageFaultErrorCodeWrite)
                                        ? Exception::AccessViolationOperation::kWrite
                                        : Exception::AccessViolationOperation::kRead;
 #else
@@ -331,6 +378,30 @@ static void ExceptionHandlerCallback(int signal_number, siginfo_t* signal_info,
                         modified_register_index * sizeof(vec128_t),
                     &thread_context.xmm_registers[modified_register_index], sizeof(vec128_t));
       }
+#elif REX_PLATFORM_PS5
+      mcontext.mc_rip = __register_t(thread_context.rip);
+      mcontext.mc_rflags = __register_t(thread_context.eflags);
+      uint32_t modified_register_index;
+      // The order must match the order in X64Register.
+      __register_t* const kIntRegisterMap[] = {
+          &mcontext.mc_rax, &mcontext.mc_rcx, &mcontext.mc_rdx, &mcontext.mc_rbx,
+          &mcontext.mc_rsp, &mcontext.mc_rbp, &mcontext.mc_rsi, &mcontext.mc_rdi,
+          &mcontext.mc_r8,  &mcontext.mc_r9,  &mcontext.mc_r10, &mcontext.mc_r11,
+          &mcontext.mc_r12, &mcontext.mc_r13, &mcontext.mc_r14, &mcontext.mc_r15,
+      };
+      uint16_t modified_int_registers_remaining = ex.modified_int_registers();
+      while (rex::bit_scan_forward(modified_int_registers_remaining, &modified_register_index)) {
+        modified_int_registers_remaining &= ~(UINT16_C(1) << modified_register_index);
+        *kIntRegisterMap[modified_register_index] =
+            __register_t(thread_context.int_registers[modified_register_index]);
+      }
+      vec128_t* const xmm_registers = Ps5XmmRegisters(mcontext);
+      uint16_t modified_xmm_registers_remaining = ex.modified_xmm_registers();
+      while (rex::bit_scan_forward(modified_xmm_registers_remaining, &modified_register_index)) {
+        modified_xmm_registers_remaining &= ~(UINT16_C(1) << modified_register_index);
+        std::memcpy(&xmm_registers[modified_register_index],
+                    &thread_context.xmm_registers[modified_register_index], sizeof(vec128_t));
+      }
 #else
       mcontext.gregs[REG_RIP] = greg_t(thread_context.rip);
       mcontext.gregs[REG_EFL] = greg_t(thread_context.eflags);
@@ -433,7 +504,7 @@ void ExceptionHandler::Install(Handler fn, void* data) {
     if (sigaction(SIGSEGV, &signal_handler, &original_sigsegv_handler_) != 0) {
       assert_always("Failed to install new SIGSEGV handler");
     }
-#if REX_PLATFORM_MAC
+#if REX_PLATFORM_MAC || REX_PLATFORM_PS5
     if (sigaction(SIGBUS, &signal_handler, &original_sigbus_handler_) != 0) {
       assert_always("Failed to install new SIGBUS handler");
     }
@@ -478,7 +549,7 @@ void ExceptionHandler::Uninstall(Handler fn, void* data) {
       if (sigaction(SIGSEGV, &original_sigsegv_handler_, NULL) != 0) {
         assert_always("Failed to restore original SIGSEGV handler");
       }
-#if REX_PLATFORM_MAC
+#if REX_PLATFORM_MAC || REX_PLATFORM_PS5
       if (sigaction(SIGBUS, &original_sigbus_handler_, NULL) != 0) {
         assert_always("Failed to restore original SIGBUS handler");
       }
@@ -490,4 +561,4 @@ void ExceptionHandler::Uninstall(Handler fn, void* data) {
 
 }  // namespace rex::arch
 
-#endif  // REX_PLATFORM_LINUX || REX_PLATFORM_MAC
+#endif  // REX_PLATFORM_LINUX || REX_PLATFORM_MAC || REX_PLATFORM_PS5
