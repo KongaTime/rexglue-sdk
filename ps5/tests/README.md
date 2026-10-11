@@ -39,6 +39,7 @@ Each one builds three ways:
   runs it.
 
   On the console (2026-10-11, PS5_EdgeOfTimeTitle `6f90a64`, `results/2026-10-11-title.txt`),
-  all of it passed: the title has 12288 MiB of direct memory and 417 MiB of free
+  all 36 of its checks passed (the six that make kernel calls fail need the host
+  model): the title has 12288 MiB of direct memory and 417 MiB of free
   flexible memory, and the physical heap's 512 MiB commit took 25.5 ms (256 chunks).
   No-access protection holds on the shared views, and so does protection per view.
