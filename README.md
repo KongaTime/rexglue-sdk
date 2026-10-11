@@ -21,9 +21,10 @@ below this section is upstream's README, unchanged.
   modules a title links. EdgeOfTimeRecomp's `ps5/probe` has checked on a console what
   the thread signals and the exception handler rely on; fibers are a stack switch of
   the fork's own (`src/core/fiber_switch_x64.h`), since the console's `makecontext`
-  is unusable. Guest memory (`shm_open` views, charged to the console's small
-  flexible budget) and the MMIO handler's reads of execute-only code still need their
-  PS5 versions, and the runtime itself has not run on a console yet.
+  is unusable. Guest memory is direct memory (`src/core/memory_ps5.cpp`), backed in
+  2 MiB chunks as it is committed; `ps5/tests` checks it on the build host and on the
+  console. The MMIO handler's reads of execute-only code still need their PS5
+  version, and the runtime itself has not run on a console yet.
 - **Keeping in step:** upstream is merged in, never rebased onto.
 
 > [!CAUTION]

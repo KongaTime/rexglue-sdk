@@ -66,7 +66,6 @@ elseif(UNIX)
         fiber_posix.cpp
         mapped_memory_posix.cpp
         math_gcc.cpp
-        memory_posix.cpp
         platform/console_posix.cpp
         platform/env_posix.cpp
         seh_posix.cpp
@@ -76,8 +75,12 @@ elseif(UNIX)
     )
     if(PROSPERO)
         # PS5: fibers are a stack switch of their own (fiber_posix.cpp builds
-        # nothing there; the console's makecontext is unusable)
-        target_sources(rexcore PRIVATE fiber_ps5.cpp)
+        # nothing there; the console's makecontext is unusable), and memory is
+        # direct memory (memory_ps5.cpp; POSIX shared memory would be charged to
+        # the title's small flexible budget)
+        target_sources(rexcore PRIVATE fiber_ps5.cpp memory_ps5.cpp)
+    else()
+        target_sources(rexcore PRIVATE memory_posix.cpp)
     endif()
 endif()
 

@@ -161,7 +161,16 @@ bool Memory::Initialize() {
   // Attempt to create our views. This may fail at the first address
   // we pick, so try a few times.
   mapping_base_ = 0;
-  for (size_t n = 32; n < 64; n++) {
+#if REX_PLATFORM_PS5
+  // PS5: ranges this size are granted from 0x10_0000_0000 up, exactly at the
+  // address asked for, and nothing at or above 1 TiB (PS5_PayloadSDK's
+  // platform/docs/PROBE.md, "Virtual space"); lower, the arena would crowd the
+  // area the kernel places unaddressed reservations in.
+  const size_t first_base_bit = 36;
+#else
+  const size_t first_base_bit = 32;
+#endif
+  for (size_t n = first_base_bit; n < 64; n++) {
     auto mapping_base = reinterpret_cast<uint8_t*>(1ull << n);
     if (!MapViews(mapping_base)) {
       mapping_base_ = mapping_base;
