@@ -10,7 +10,7 @@
  * then commits, aliases, protects, decommits and tears it down through the
  * rex::memory API, checking each step by touching the memory.
  *
- * Built two ways (ps5/tests/README.md):
+ * Built three ways (ps5/tests/README.md):
  * - on the build host, against PS5_PayloadSDK's platform layer and its host
  *   model of the console's kernel (run-host.sh), which can also make kernel
  *   calls fail to check that every failure unwinds;
@@ -18,7 +18,11 @@
  *   answers what the model cannot: whether the console accepts no-access
  *   protection on these shared views, how long backing the guest's physical
  *   memory takes, and how much direct memory the process may have. Every line
- *   also goes to /data/rexglue-memory-test.txt as it is measured.
+ *   also goes to /data/rexglue-memory-test.txt as it is measured;
+ * - inside a title (MEMORY_PS5_TEST_EMBEDDED: memory_ps5_test_main() in place of
+ *   main()), whose process has the console's 12 GiB of direct memory where a
+ *   payload's has next to none. The title names its results file
+ *   (MEMORY_PS5_TEST_RESULTS).
  *
  * Every touch of guest memory goes through put/holds/faults, so a commit that
  * failed is reported, not crashed into; a fault anywhere else stops the test
@@ -36,6 +40,7 @@
 #include <ctime>
 #include <vector>
 
+#include <sys/stat.h>
 #include <unistd.h>
 
 #include <ps5platform/kernel.h>
@@ -45,6 +50,14 @@
 extern "C" {
 #include "host_kernel.h"
 }
+#endif
+
+#ifndef MEMORY_PS5_TEST_RESULTS
+#if defined(MEMORY_PS5_TEST_EMBEDDED)
+#define MEMORY_PS5_TEST_RESULTS "/app0/rexglue-memory-test.txt"  // the title's folder
+#else
+#define MEMORY_PS5_TEST_RESULTS "/data/rexglue-memory-test.txt"
+#endif
 #endif
 
 using namespace rex::memory;
@@ -62,7 +75,7 @@ void say(const char* format, ...) {
   std::printf("%s\n", line);
   std::fflush(stdout);
 #if defined(__PROSPERO__)
-  if (FILE* file = std::fopen("/data/rexglue-memory-test.txt", "a")) {
+  if (FILE* file = std::fopen(MEMORY_PS5_TEST_RESULTS, "a")) {
     std::fprintf(file, "%s\n", line);
     std::fclose(file);
   }
@@ -314,13 +327,26 @@ void arena_checks(uint8_t* base) {
 
 }  // namespace
 
+#if defined(MEMORY_PS5_TEST_EMBEDDED)
+extern "C" int memory_ps5_test_main(void) {
+#else
 int main() {
-  struct sigaction action {};
+#endif
+#if defined(__PROSPERO__)
+  // A fresh results file each run, readable and writable over FTP
+  if (FILE* file = std::fopen(MEMORY_PS5_TEST_RESULTS, "w")) {
+    std::fclose(file);
+    chmod(MEMORY_PS5_TEST_RESULTS, 0666);
+  }
+#endif
+  // The test's fault handler, and whatever was there before it (a title's own)
+  // back at the end
+  struct sigaction action {}, previous_segv {}, previous_bus {};
   action.sa_sigaction = on_fault;
   action.sa_flags = SA_SIGINFO;
   sigemptyset(&action.sa_mask);
-  sigaction(SIGSEGV, &action, nullptr);
-  sigaction(SIGBUS, &action, nullptr);
+  sigaction(SIGSEGV, &action, &previous_segv);
+  sigaction(SIGBUS, &action, &previous_bus);
 
   say("==== memory_ps5_test ====");
   const size_t page = page_size();
@@ -393,5 +419,7 @@ int main() {
         "no direct-memory objects, views, ranges or committed units are left");
 
   say("==== %d failed ====", failures);
+  sigaction(SIGSEGV, &previous_segv, nullptr);
+  sigaction(SIGBUS, &previous_bus, nullptr);
   return failures != 0;
 }

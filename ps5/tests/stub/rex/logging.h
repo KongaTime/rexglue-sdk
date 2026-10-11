@@ -8,10 +8,18 @@
 
 #include <fmt/format.h>
 
+#ifndef MEMORY_PS5_TEST_RESULTS
+#if defined(MEMORY_PS5_TEST_EMBEDDED)
+#define MEMORY_PS5_TEST_RESULTS "/app0/rexglue-memory-test.txt"  // the title's folder
+#else
+#define MEMORY_PS5_TEST_RESULTS "/data/rexglue-memory-test.txt"
+#endif
+#endif
+
 inline void rex_test_error(const std::string& line) {
   std::fputs((line + "\n").c_str(), stderr);
 #if defined(__PROSPERO__)
-  if (FILE* file = std::fopen("/data/rexglue-memory-test.txt", "a")) {
+  if (FILE* file = std::fopen(MEMORY_PS5_TEST_RESULTS, "a")) {
     std::fprintf(file, "ERROR %s\n", line.c_str());
     std::fclose(file);
   }
