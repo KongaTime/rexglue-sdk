@@ -14,6 +14,10 @@
 #define __BYTE_ORDER __BYTE_ORDER__
 #define __BIG_ENDIAN __ORDER_BIG_ENDIAN__
 #endif
+#elif defined(__PROSPERO__)
+#include <sys/endian.h>
+#define __BYTE_ORDER _BYTE_ORDER
+#define __BIG_ENDIAN _BIG_ENDIAN
 #else
 #include <endian.h>
 #endif

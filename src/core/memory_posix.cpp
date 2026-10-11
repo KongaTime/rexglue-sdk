@@ -36,8 +36,9 @@
 #include <rex/string.h>
 
 // macOS off_t is 64-bit with no *64 large-file variants; Linux keeps the
-// explicit *64 forms for legacy 32-bit off_t distributions.
-#if defined(__APPLE__)
+// explicit *64 forms for legacy 32-bit off_t distributions. FreeBSD's (the
+// PS5's) off_t is 64-bit too, with no *64 variants.
+#if defined(__APPLE__) || defined(__PROSPERO__)
 #define rex_mmap64 mmap
 #define rex_ftruncate64 ftruncate
 #else

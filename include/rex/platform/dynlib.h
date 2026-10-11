@@ -71,6 +71,14 @@ inline constexpr const char* kVulkanLoader = "libvulkan.1.dylib";
 inline constexpr const char* kRenderDoc = "librenderdoc.dylib";
 inline constexpr const char* kSpirvToolsSdkPath = "lib/libSPIRV-Tools-shared.dylib";
 
+#elif REX_PLATFORM_PS5
+
+// The console loads no libraries at run time: a title links everything it uses,
+// RADV included. Lookups of these names fail, and callers fall back.
+inline constexpr const char* kVulkanLoader = "";
+inline constexpr const char* kRenderDoc = "";
+inline constexpr const char* kSpirvToolsSdkPath = "";
+
 #else
 #error No library names provided for the target platform.
 #endif
