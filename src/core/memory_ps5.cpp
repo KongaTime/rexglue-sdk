@@ -208,8 +208,14 @@ bool BackChunk(Mapping& mapping, size_t chunk) {
   const size_t bytes = std::min(kChunk, mapping.length - chunk * kChunk);
   const int result = ps5_shm_create(bytes, &mapping.chunks[chunk]);
   if (result != 0) {
-    REXSYS_ERROR("ps5_shm_create(0x{:X}) for chunk {} failed: 0x{:08X}", bytes, chunk,
-                 uint32_t(result));
+    int64_t free_start = 0;
+    size_t free_bytes = 0;
+    sceKernelAvailableDirectMemorySize(0, sceKernelGetDirectMemorySize(), kUnit, &free_start,
+                                       &free_bytes);
+    REXSYS_ERROR(
+        "ps5_shm_create(0x{:X}) for chunk {} failed: 0x{:08X} (largest free direct-memory "
+        "block 0x{:X} of 0x{:X})",
+        bytes, chunk, uint32_t(result), free_bytes, sceKernelGetDirectMemorySize());
     return false;
   }
   for (size_t mapped = 0; mapped < mapping.views.size(); ++mapped) {
