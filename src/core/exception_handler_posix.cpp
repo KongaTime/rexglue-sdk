@@ -46,7 +46,7 @@ namespace rex::arch {
 bool signal_handlers_installed_ = false;
 struct sigaction original_sigill_handler_;
 struct sigaction original_sigsegv_handler_;
-#if REX_PLATFORM_MAC || REX_PLATFORM_PS5
+#if REX_PLATFORM_MAC
 struct sigaction original_sigbus_handler_;
 #endif
 
@@ -211,10 +211,9 @@ static void ExceptionHandlerCallback(int signal_number, siginfo_t* signal_info,
       // On macOS, SIGBUS (KERN_PROTECTION_FAILURE) is raised for writes to
       // read-protected pages — the same scenario that raises SIGSEGV on Linux.
       // Fall through to treat it as an access violation.
-      // FreeBSD (the PS5) may raise SIGBUS for an access to a protected page
-      // too (its machdep.prot_fault_translation): treat it like macOS until
-      // the console is measured.
-#if !REX_PLATFORM_MAC && !REX_PLATFORM_PS5
+      // The PS5 raises SIGSEGV for an access to a protected page, as Linux
+      // does (EdgeOfTimeRecomp's ps5/probe: reads and writes alike).
+#if !REX_PLATFORM_MAC
       // On non-Mac POSIX, SIGBUS is a bus error (misaligned access), not a
       // protection fault — don't handle it here.
       assert_unhandled_case(signal_number);
@@ -504,7 +503,7 @@ void ExceptionHandler::Install(Handler fn, void* data) {
     if (sigaction(SIGSEGV, &signal_handler, &original_sigsegv_handler_) != 0) {
       assert_always("Failed to install new SIGSEGV handler");
     }
-#if REX_PLATFORM_MAC || REX_PLATFORM_PS5
+#if REX_PLATFORM_MAC
     if (sigaction(SIGBUS, &signal_handler, &original_sigbus_handler_) != 0) {
       assert_always("Failed to install new SIGBUS handler");
     }
@@ -549,7 +548,7 @@ void ExceptionHandler::Uninstall(Handler fn, void* data) {
       if (sigaction(SIGSEGV, &original_sigsegv_handler_, NULL) != 0) {
         assert_always("Failed to restore original SIGSEGV handler");
       }
-#if REX_PLATFORM_MAC || REX_PLATFORM_PS5
+#if REX_PLATFORM_MAC
       if (sigaction(SIGBUS, &original_sigbus_handler_, NULL) != 0) {
         assert_always("Failed to restore original SIGBUS handler");
       }

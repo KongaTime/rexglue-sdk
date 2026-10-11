@@ -203,6 +203,12 @@ struct FPSCRRegister {
 
   inline void InitHost() noexcept {
     csr = getcsr();
+#if defined(__PROSPERO__)
+    // PS5 threads start with flush-to-zero and denormals-are-zero on (MXCSR
+    // 0x9fc0, measured by EdgeOfTimeRecomp's ps5/probe); desktop threads start
+    // with both off, the state the recompiled code toggles from.
+    csr &= ~FlushMask;
+#endif
     Platform::InitHostExceptions(csr);
     setcsr(csr);
   }
