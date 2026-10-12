@@ -296,13 +296,20 @@ std::vector<FileInfo> ListFiles(const std::filesystem::path& path) {
     FileInfo info;
 
     info.name = ent->d_name;
-    struct stat st;
-    stat((path / info.name).c_str(), &st);
+    // An entry stat cannot describe is left out rather than listed from an
+    // uninitialized stat, and its type comes from stat when the directory
+    // gives none (DT_UNKNOWN, as the PS5's file systems may; the Simpsons
+    // port's filesystem_posix.cpp found the same)
+    struct stat st {};
+    if (stat((path / info.name).c_str(), &st) != 0) {
+      continue;
+    }
     info.create_timestamp = convertUnixtimeToWinFiletime(st.st_ctime);
     info.access_timestamp = convertUnixtimeToWinFiletime(st.st_atime);
     info.write_timestamp = convertUnixtimeToWinFiletime(st.st_mtime);
     info.path = path;
-    if (ent->d_type == DT_DIR) {
+    const bool directory = ent->d_type == DT_UNKNOWN ? S_ISDIR(st.st_mode) : ent->d_type == DT_DIR;
+    if (directory) {
       info.type = FileInfo::Type::kDirectory;
       info.total_size = 0;
     } else {

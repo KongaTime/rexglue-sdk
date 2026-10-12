@@ -31,6 +31,12 @@ uint64_t Clock::host_tick_frequency_platform() {
   mach_timebase_info_data_t info;
   mach_timebase_info(&info);
   return (uint64_t)((1000000000ull * (uint64_t)info.denom) / (uint64_t)info.numer);
+#elif REX_PLATFORM_PS5
+  // The ticks are nanoseconds (host_tick_count_platform), whatever resolution
+  // the console's clock_getres reports for the clock: a coarser figure there
+  // would make every guest clock and timer run that many times too fast (as the
+  // Simpsons port found; its clock_posix.cpp fixes the unit the same way)
+  return 1000000000ull;
 #else
   timespec res;
   int error = clock_getres(CLOCK_MONOTONIC_RAW, &res);

@@ -685,7 +685,7 @@ class PosixCondition<Thread> : public PosixConditionBase {
       return false;
     }
 #endif
-    if (params.initial_priority != 0) {
+    if (params.initial_priority != 0 && !REX_PLATFORM_PS5) {
       sched_param sched{};
       sched.sched_priority = params.initial_priority + 1;
       if (pthread_attr_setschedpolicy(&attr, SCHED_FIFO) != 0) {
@@ -936,6 +936,14 @@ class PosixCondition<Thread> : public PosixConditionBase {
   }
 
   void set_priority(int new_priority) {
+#if REX_PLATFORM_PS5
+    // A guest's priorities (ReX's desktop 0..32, SCHED_FIFO) are outside the
+    // console's (256..767, smaller is higher), where a FIFO thread at the top can
+    // starve the rest: threads keep the priority they were created with, as the
+    // Simpsons port's do
+    (void)new_priority;
+    return;
+#endif
     WaitStarted();
     sched_param param{};
     param.sched_priority = new_priority;
