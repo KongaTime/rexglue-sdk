@@ -38,8 +38,9 @@ namespace rex::memory::detail {
 ///   - macOS arm64:    16KB granularity  -> offset
 ///   - macOS x86_64:    4KB granularity  -> no offset
 ///   - Linux (any):     4KB granularity  -> no offset (mmap handles it natively)
+///   - PS5:            64KB granularity  -> offset (memory_ps5.cpp's kUnit, 16KB pages)
 constexpr u32 PhysicalHostOffset([[maybe_unused]] u32 guest_addr) noexcept {
-#if REX_PLATFORM_WIN32 || (REX_PLATFORM_MAC && defined(__aarch64__))
+#if REX_PLATFORM_WIN32 || (REX_PLATFORM_MAC && defined(__aarch64__)) || REX_PLATFORM_PS5
   return (guest_addr >= 0xE0000000u) ? 0x1000u : 0u;
 #else
   return 0u;
