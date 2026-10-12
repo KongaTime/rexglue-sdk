@@ -4,6 +4,7 @@
  */
 #pragma once
 
+#include <cstddef>
 #include <cstdint>
 #include <filesystem>
 
@@ -43,7 +44,22 @@ class DynamicLibrary {
 
  private:
   void* handle_ = nullptr;
+#if REX_PLATFORM_PS5
+  // handle_ is a library the title links in (RegisterStaticLibrary), not dlopen's
+  bool static_ = false;
+#endif
 };
+
+#if REX_PLATFORM_PS5
+// A title cannot dlopen code of its own: a library it links in instead (a game's
+// recompiled DLL module) registers its symbols under the name Load is given, and
+// Load finds them there by that path's file name.
+struct StaticSymbol {
+  const char* name;
+  void* address;
+};
+void RegisterStaticLibrary(const char* name, const StaticSymbol* symbols, size_t count);
+#endif
 
 namespace lib_names {
 
