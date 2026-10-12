@@ -57,7 +57,6 @@
 #include <chrono>
 #include <thread>
 
-#include <rex/platform/fault_prospero.h>
 #endif
 
 REXCVAR_DEFINE_STRING(gpu_plugin, "", "GPU",
@@ -502,9 +501,11 @@ void ReXApp::SetupOverlays(rex::ui::Presenter* presenter, rex::ui::ImmediateDraw
 
 #if REX_PLATFORM_PS5
 // While the game is brought up on the console: every 10 s for its first two
-// minutes, where each of its threads is (rex::platform::SampleProsperoThread),
-// so a run that goes quiet says what it waits in. Addresses in the title's code
-// carry their place in the linked ELF, for llvm-nm.
+// minutes, the last hook or kernel export each thread entered and how many it
+// has entered (XThread::NoteCall), so a run that goes quiet says what it waits
+// in, and whether a thread is blocked (its count stands) or busy. Read from
+// memory only: interrupting the threads with a signal to sample their stacks
+// froze the whole console (run 4, 2026-10-12).
 void ReXApp::StartProsperoStallDump() {
   std::thread([this] {
     for (int round = 1; round <= 12 && !shutting_down_.load(std::memory_order_acquire); ++round) {
@@ -516,23 +517,9 @@ void ReXApp::StartProsperoStallDump() {
       auto threads = state->object_table()->GetObjectsByType<system::XThread>();
       REXLOG_INFO("PS5 stall dump {} ({} s after launch): {} threads", round, round * 10, threads.size());
       for (auto& xthread : threads) {
-        auto* host = xthread->thread();
-        if (!host) {
-          continue;
-        }
-        uint64_t frames[48];
-        size_t count = 0;
-        const auto native = static_cast<pthread_t>(host->native_handle());
-        if (!platform::SampleProsperoThread(native, frames, 48, &count)) {
-          REXLOG_INFO("  '{}': no answer", xthread->name());
-          continue;
-        }
-        std::string line;
-        for (size_t i = 0; i < count; ++i) {
-          line += ' ';
-          line += platform::FormatProsperoCodeAddress(frames[i]);
-        }
-        REXLOG_INFO("  '{}'{}:{}", xthread->name(), xthread->is_guest_thread() ? " (guest)" : "", line);
+        const char* last = xthread->last_call();
+        REXLOG_INFO("  '{}'{}: {} calls, last {}", xthread->name(), xthread->is_guest_thread() ? " (guest)" : "",
+                    xthread->call_count(), last ? last : "(none)");
       }
     }
   }).detach();

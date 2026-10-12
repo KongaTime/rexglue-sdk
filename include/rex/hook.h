@@ -24,6 +24,17 @@
 #include <rex/system/thread_state.h>
 #include <rex/types.h>
 
+#if defined(__PROSPERO__)
+namespace rex::system {
+// PS5 stall dumps (ReXApp::StartProsperoStallDump): the last hook or kernel
+// export each guest thread entered, and how many it has entered
+void NoteThreadCall(const char* name) noexcept;
+}  // namespace rex::system
+#define REX_NOTE_CALL(name) ::rex::system::NoteThreadCall(name)
+#else
+#define REX_NOTE_CALL(name)
+#endif
+
 //=============================================================================
 // Hook Macros
 //=============================================================================
@@ -35,12 +46,14 @@
 #include <tracy/Tracy.hpp>
 #define REX_HOOK(subroutine, function)                           \
   extern "C" REX_FUNC(subroutine) {                              \
+    REX_NOTE_CALL(#subroutine);                                  \
     ZoneNamedN(___tracy_hook_zone, #subroutine, TracyIsStarted); \
     rex::ppc::HostToGuestFunction<function>(ctx, base);          \
   }
 #else
 #define REX_HOOK(subroutine, function)                  \
   extern "C" REX_FUNC(subroutine) {                     \
+    REX_NOTE_CALL(#subroutine);                         \
     rex::ppc::HostToGuestFunction<function>(ctx, base); \
   }
 #endif

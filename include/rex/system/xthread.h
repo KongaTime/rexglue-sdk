@@ -382,6 +382,16 @@ class XThread : public XObject {
   X_STATUS Delay(uint32_t processor_mode, uint32_t alertable, uint64_t interval);
 
   rex::thread::Thread* thread() { return thread_.get(); }
+#if REX_PLATFORM_PS5
+  // The last hook or kernel export this thread entered, and how many it has
+  // (rex::system::NoteThreadCall, for the PS5's stall dumps)
+  void NoteCall(const char* name) noexcept {
+    last_call_.store(name, std::memory_order_relaxed);
+    call_count_.fetch_add(1, std::memory_order_relaxed);
+  }
+  const char* last_call() const noexcept { return last_call_.load(std::memory_order_relaxed); }
+  uint64_t call_count() const noexcept { return call_count_.load(std::memory_order_relaxed); }
+#endif
   runtime::ThreadState* thread_state() { return thread_state_.get(); }
 
   virtual bool Save(stream::ByteStream* stream) override;
@@ -439,6 +449,10 @@ class XThread : public XObject {
 
   std::unique_ptr<rex::thread::Thread> thread_ = nullptr;
   rex::thread::Fiber* main_fiber_ = nullptr;
+#if REX_PLATFORM_PS5
+  std::atomic<const char*> last_call_{nullptr};
+  std::atomic<uint64_t> call_count_{0};
+#endif
 };
 
 class XHostThread : public XThread {

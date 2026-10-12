@@ -127,6 +127,14 @@ bool XThread::IsInThread(XThread* other) {
   return GetBoundCurrentXThread() == other;
 }
 
+#if REX_PLATFORM_PS5
+void NoteThreadCall(const char* name) noexcept {
+  if (XThread* thread = current_xthread_tls_) {
+    thread->NoteCall(name);
+  }
+}
+#endif
+
 XThread* XThread::GetCurrentThread() {
   XThread* thread = GetBoundCurrentXThread();
   if (!thread) {
