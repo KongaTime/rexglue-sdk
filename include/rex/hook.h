@@ -73,6 +73,26 @@
   REX_HOOK(name, function)         \
   static rex::ppc::detail::PPCFuncRegistrar _ppc_reg_##name(#name, &name);
 
+#if defined(__PROSPERO__)
+// The PS5 links the runtime into the title with the game: a name the game's own
+// recompiled code defines (its statically linked D3DDevice_* functions, say)
+// takes the place of the runtime's stub, as the executable's definition does over
+// the shared runtime's on the desktop
+#define REX_EXPORT_STUB(name)                       \
+  extern "C" __attribute__((weak)) REX_FUNC(name) { \
+    (void)base;                                     \
+    REXKRNL_WARN("{} STUB", #name);                 \
+  }                                                 \
+  static rex::ppc::detail::PPCFuncRegistrar _ppc_reg_##name(#name, &name);
+
+#define REX_EXPORT_STUB_RETURN(name, retval)                                          \
+  extern "C" __attribute__((weak)) REX_FUNC(name) {                                   \
+    (void)base;                                                                       \
+    REXKRNL_WARN("{} STUB - returning {:#x}", #name, static_cast<uint32_t>(retval)); \
+    ctx.r3.u64 = (retval);                                                            \
+  }                                                                                   \
+  static rex::ppc::detail::PPCFuncRegistrar _ppc_reg_##name(#name, &name);
+#else
 #define REX_EXPORT_STUB(name) \
   REX_STUB(name)              \
   static rex::ppc::detail::PPCFuncRegistrar _ppc_reg_##name(#name, &name);
@@ -80,6 +100,7 @@
 #define REX_EXPORT_STUB_RETURN(name, retval) \
   REX_STUB_RETURN(name, retval)              \
   static rex::ppc::detail::PPCFuncRegistrar _ppc_reg_##name(#name, &name);
+#endif
 
 namespace rex {
 
