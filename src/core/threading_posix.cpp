@@ -103,6 +103,21 @@ void AndroidShutdown() {
 }
 #endif
 
+// Ends the calling thread. On the PS5 its C++ thread_local destructors run
+// first, through the payload SDK's ps5_pthread_exit: libkernel runs a thread's
+// key destructors in no set order, and emulated TLS frees the thread's storage
+// from one of them, so a thread_local destructor left to its key can work on
+// freed memory (a game thread ending in ExTerminateThread crashed in a
+// thread_local std::map's destructor after 43 minutes of play, 2026-10-12). A
+// thread whose start routine returns has them run by the SDK already.
+[[noreturn]] static void ExitCurrentThread(void* value) {
+#if REX_PLATFORM_PS5
+  ps5_pthread_exit(value);
+#else
+  pthread_exit(value);
+#endif
+}
+
 template <typename _Rep, typename _Period>
 inline timespec DurationToTimeSpec(std::chrono::duration<_Rep, _Period> duration) {
   auto nanoseconds = std::chrono::duration_cast<std::chrono::nanoseconds>(duration);
@@ -1094,7 +1109,7 @@ class PosixCondition<Thread> : public PosixConditionBase {
       cond_.notify_all();
     }
     if (is_current_thread) {
-      pthread_exit(reinterpret_cast<void*>(exit_code));
+      ExitCurrentThread(reinterpret_cast<void*>(exit_code));
     } else {
 #if REX_PLATFORM_ANDROID
       if (pthread_kill(thread_, GetSystemSignal(SignalType::kThreadTerminate)) != 0) {
@@ -1628,7 +1643,7 @@ void Thread::Exit(int exit_code) {
     current_thread_->Terminate(exit_code);
   } else {
     // Should only happen with the main thread
-    pthread_exit(reinterpret_cast<void*>(exit_code));
+    ExitCurrentThread(reinterpret_cast<void*>(exit_code));
   }
   // Function must not return
   assert_always();
