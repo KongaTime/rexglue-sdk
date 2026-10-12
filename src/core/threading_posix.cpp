@@ -33,6 +33,7 @@ static_assert(REX_PLATFORM_LINUX || REX_PLATFORM_MAC || REX_PLATFORM_PS5, "This 
 #include <sys/cpuset.h>
 
 #include <ps5platform/libc.h>
+#include <rex/memory/utils.h>
 #endif
 
 #if defined(__APPLE__)
@@ -666,10 +667,24 @@ class PosixCondition<Thread> : public PosixConditionBase {
     pthread_attr_t attr;
     if (pthread_attr_init(&attr) != 0)
       return false;
+#if REX_PLATFORM_PS5
+    // A stack pthread_create maps is charged to the title's flexible budget
+    // (448 MiB, PS5_PayloadSDK's PROBE.md), which a game's 16 MiB thread stacks
+    // used up within five threads (C0000017, 2026-10-12): every stack is direct
+    // memory instead (memory_ps5.cpp), with a no-access guard below it
+    if (!AllocateStack(params.stack_size) ||
+        pthread_attr_setstack(&attr, stack_, params.stack_size) != 0) {
+      REXLOG_ERROR("PS5: no {} KiB stack for a new thread", params.stack_size / 1024);
+      FreeStack();
+      pthread_attr_destroy(&attr);
+      return false;
+    }
+#else
     if (pthread_attr_setstacksize(&attr, params.stack_size) != 0) {
       pthread_attr_destroy(&attr);
       return false;
     }
+#endif
     if (params.initial_priority != 0) {
       sched_param sched{};
       sched.sched_priority = params.initial_priority + 1;
@@ -682,13 +697,44 @@ class PosixCondition<Thread> : public PosixConditionBase {
         return false;
       }
     }
-    if (pthread_create(&thread_, &attr, ThreadStartRoutine, start_data) != 0) {
+    if (const int error = pthread_create(&thread_, &attr, ThreadStartRoutine, start_data); error != 0) {
+#if REX_PLATFORM_PS5
+      REXLOG_ERROR("PS5: pthread_create failed ({})", error);
+      FreeStack();
+#endif
       pthread_attr_destroy(&attr);
       return false;
     }
     pthread_attr_destroy(&attr);
     return true;
   }
+
+#if REX_PLATFORM_PS5
+  static constexpr size_t kStackGuard = 0x10000;
+
+  bool AllocateStack(size_t size) {
+    size = (size + kStackGuard - 1) & ~(kStackGuard - 1);
+    void* base = rex::memory::AllocFixed(nullptr, size + kStackGuard, rex::memory::AllocationType::kReserve,
+                                         rex::memory::PageAccess::kNoAccess);
+    if (!base) {
+      return false;
+    }
+    stack_reservation_ = base;
+    stack_reservation_size_ = size + kStackGuard;
+    stack_ = static_cast<uint8_t*>(base) + kStackGuard;
+    return rex::memory::AllocFixed(stack_, size, rex::memory::AllocationType::kCommit,
+                                   rex::memory::PageAccess::kReadWrite) != nullptr;
+  }
+
+  void FreeStack() {
+    if (stack_reservation_) {
+      rex::memory::DeallocFixed(stack_reservation_, stack_reservation_size_,
+                                rex::memory::DeallocationType::kRelease);
+    }
+    stack_reservation_ = nullptr;
+    stack_ = nullptr;
+  }
+#endif
 
   /// Constructor for existing thread. This should only happen once called by
   /// Thread::GetCurrentThread() on the main thread
@@ -712,6 +758,12 @@ class PosixCondition<Thread> : public PosixConditionBase {
     // Match Canary/Edge behavior.
     // Force-cancel/join from the condition destructor can self-join/crash
     // depending on shutdown ordering, so threads must be stopped explicitly.
+#if REX_PLATFORM_PS5
+    // Its stack goes once the thread has ended; a thread still running keeps it
+    if (state_ == State::kFinished) {
+      FreeStack();
+    }
+#endif
   }
 
   bool Signal() override { return true; }
@@ -1080,6 +1132,11 @@ class PosixCondition<Thread> : public PosixConditionBase {
 #endif
   }
   pthread_t thread_;
+#if REX_PLATFORM_PS5
+  void* stack_reservation_ = nullptr;
+  size_t stack_reservation_size_ = 0;
+  void* stack_ = nullptr;
+#endif
   bool signaled_;
   int exit_code_;
   State state_;             // Protected by state_mutex_
