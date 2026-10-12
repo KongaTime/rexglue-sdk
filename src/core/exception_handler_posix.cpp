@@ -39,6 +39,7 @@
 #include <machine/fpu.h>
 
 #include <ps5platform/context.h>
+#include <ps5platform/kernel.h>
 #endif
 
 namespace rex::arch {
@@ -51,6 +52,36 @@ struct sigaction original_sigbus_handler_;
 #endif
 
 #if REX_PLATFORM_PS5
+// The console maps a title's code execute-only: reading it ends the title at
+// once (SYSTEM_XO_VIOLATION), with no signal. MMIOHandler reads the instruction
+// that faulted, so the code segment is made readable before any handler runs.
+// PS5_EdgeOfTimeTitle's code read check (2026-10-12): sceKernelMprotect
+// read+execute on a page of the title's code made it readable and it still ran,
+// while untouched code ended the title when read. sceKernelQueryMemoryProtection
+// answered 0x4 (execute) for the page before and after, so it cannot say whether
+// code is readable; it gives the segment's bounds (0x400000 up in that title).
+// System modules' code stays execute-only.
+static void MakeCodeReadable() {
+  void* start = nullptr;
+  void* end = nullptr;
+  uint32_t protection = 0;
+  const int32_t query = sceKernelQueryMemoryProtection(
+      reinterpret_cast<void*>(&MakeCodeReadable), &start, &end, &protection);
+  if (query != 0) {
+    REXLOG_ERROR("PS5: no code segment to make readable (query {:#010x})", static_cast<uint32_t>(query));
+    return;
+  }
+  const size_t length = static_cast<size_t>(static_cast<uint8_t*>(end) - static_cast<uint8_t*>(start));
+  const int32_t result =
+      sceKernelMprotect(start, length, PS5_KERNEL_PROT_CPU_READ | PS5_KERNEL_PROT_CPU_EXEC);
+  if (result != 0) {
+    REXLOG_ERROR("PS5: code at {}-{} stays execute-only ({:#010x}); an MMIO fault will end the title",
+                 start, end, static_cast<uint32_t>(result));
+    return;
+  }
+  REXLOG_INFO("PS5: code at {}-{} made readable for the MMIO handler", start, end);
+}
+
 // The XMM registers in the fxsave image FreeBSD keeps in mc_fpstate.
 static vec128_t* Ps5XmmRegisters(mcontext_t& mcontext) {
   static_assert(sizeof(mcontext.mc_fpstate) >= sizeof(struct savefpu));
@@ -507,6 +538,9 @@ void ExceptionHandler::Install(Handler fn, void* data) {
     if (sigaction(SIGBUS, &signal_handler, &original_sigbus_handler_) != 0) {
       assert_always("Failed to install new SIGBUS handler");
     }
+#endif
+#if REX_PLATFORM_PS5
+    MakeCodeReadable();
 #endif
     signal_handlers_installed_ = true;
   }
