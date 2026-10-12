@@ -6,11 +6,15 @@
 // readable) rather than dladdr; the backtrace is the fork's own.
 #include <rex/platform/fault_prospero.h>
 
+#include <algorithm>
 #include <atomic>
 #include <cerrno>
+#include <mutex>
 #include <string>
 
 #include <fcntl.h>
+#include <pthread_np.h>
+#include <semaphore.h>
 #include <sys/stat.h>
 #include <ucontext.h>
 #include <unistd.h>
@@ -276,6 +280,99 @@ void ReportProsperoFatalSignal(int signal_number, const siginfo_t* info,
     for (size_t index = 0; index < 16; ++index) record.registers[index] = registers[index];
   }
   WriteProsperoFaultRecord(record);
+}
+
+namespace {
+
+// The sampled thread's answer, written in its SIGPROF handler
+constexpr size_t kSampleFrames = 48;
+uint64_t sample_frames[kSampleFrames];
+std::atomic<size_t> sample_count{0};
+uint64_t sample_stack_top = 0;
+sem_t sample_done;
+std::mutex sample_mutex;
+std::once_flag sample_once;
+bool sample_ready = false;
+
+void SampleHandler(int, siginfo_t*, void* context) {
+  size_t n = 0;
+  if (context) {
+    const auto& machine = static_cast<const ucontext_t*>(context)->uc_mcontext;
+    sample_frames[n++] = uint64_t(machine.mc_rip);
+    uint64_t frame = uint64_t(machine.mc_rbp);
+    const uint64_t rsp = uint64_t(machine.mc_rsp);
+    // Only frames inside the thread's own stack: code without frame pointers
+    // (the console's libraries) leaves RBP pointing anywhere
+    while (n < kSampleFrames) {
+      if (frame < rsp || frame + 16 > sample_stack_top || (frame & 7)) {
+        break;
+      }
+      const uint64_t* slot = reinterpret_cast<const uint64_t*>(frame);
+      if (!slot[1]) {
+        break;
+      }
+      sample_frames[n++] = slot[1];
+      if (slot[0] <= frame) {
+        break;
+      }
+      frame = slot[0];
+    }
+  }
+  sample_count.store(n, std::memory_order_release);
+  sem_post(&sample_done);
+}
+
+}  // namespace
+
+bool SampleProsperoThread(pthread_t thread, uint64_t* frames, size_t capacity, size_t* count) {
+  std::call_once(sample_once, [] {
+    struct sigaction action = {};
+    action.sa_sigaction = SampleHandler;
+    action.sa_flags = SA_SIGINFO | SA_RESTART;
+    sigemptyset(&action.sa_mask);
+    sample_ready = sem_init(&sample_done, 0, 0) == 0 && sigaction(SIGPROF, &action, nullptr) == 0;
+  });
+  *count = 0;
+  if (!sample_ready || pthread_equal(thread, pthread_self())) {
+    return false;
+  }
+  std::lock_guard lock(sample_mutex);
+  uint64_t top = 0;
+  pthread_attr_t attributes;
+  if (pthread_attr_init(&attributes) == 0) {
+    void* address = nullptr;
+    size_t size = 0;
+    if (pthread_attr_get_np(thread, &attributes) == 0 &&
+        pthread_attr_getstack(&attributes, &address, &size) == 0) {
+      top = reinterpret_cast<uint64_t>(address) + size;
+    }
+    pthread_attr_destroy(&attributes);
+  }
+  sample_stack_top = top;
+  while (sem_trywait(&sample_done) == 0) {
+  }
+  if (pthread_kill(thread, SIGPROF) != 0) {
+    return false;
+  }
+  for (int waited = 0; sem_trywait(&sample_done) != 0; ++waited) {
+    if (waited >= 1000) {
+      return false;
+    }
+    usleep(1000);
+  }
+  const size_t n = std::min(sample_count.load(std::memory_order_acquire), capacity);
+  for (size_t i = 0; i < n; ++i) {
+    frames[i] = sample_frames[i];
+  }
+  *count = n;
+  return true;
+}
+
+std::string FormatProsperoCodeAddress(uint64_t address) {
+  char text[64];
+  Buffer out{text, sizeof(text)};
+  out.Code(address);
+  return std::string(text, out.used);
 }
 
 }  // namespace rex::platform

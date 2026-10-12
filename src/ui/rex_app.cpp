@@ -53,6 +53,12 @@
 #include <algorithm>
 #include <filesystem>
 #include <string_view>
+#if REX_PLATFORM_PS5
+#include <chrono>
+#include <thread>
+
+#include <rex/platform/fault_prospero.h>
+#endif
 
 REXCVAR_DEFINE_STRING(gpu_plugin, "", "GPU",
                       "GPU emulation plugin to load at startup (e.g. 'xenos'); empty disables "
@@ -494,6 +500,45 @@ void ReXApp::SetupOverlays(rex::ui::Presenter* presenter, rex::ui::ImmediateDraw
   OnCreateDialogs(imgui_drawer_.get());
 }
 
+#if REX_PLATFORM_PS5
+// While the game is brought up on the console: every 10 s for its first two
+// minutes, where each of its threads is (rex::platform::SampleProsperoThread),
+// so a run that goes quiet says what it waits in. Addresses in the title's code
+// carry their place in the linked ELF, for llvm-nm.
+void ReXApp::StartProsperoStallDump() {
+  std::thread([this] {
+    for (int round = 1; round <= 12 && !shutting_down_.load(std::memory_order_acquire); ++round) {
+      std::this_thread::sleep_for(std::chrono::seconds(10));
+      auto* state = system::kernel_state();
+      if (!state) {
+        continue;
+      }
+      auto threads = state->object_table()->GetObjectsByType<system::XThread>();
+      REXLOG_INFO("PS5 stall dump {} ({} s after launch): {} threads", round, round * 10, threads.size());
+      for (auto& xthread : threads) {
+        auto* host = xthread->thread();
+        if (!host) {
+          continue;
+        }
+        uint64_t frames[48];
+        size_t count = 0;
+        const auto native = static_cast<pthread_t>(host->native_handle());
+        if (!platform::SampleProsperoThread(native, frames, 48, &count)) {
+          REXLOG_INFO("  '{}': no answer", xthread->name());
+          continue;
+        }
+        std::string line;
+        for (size_t i = 0; i < count; ++i) {
+          line += ' ';
+          line += platform::FormatProsperoCodeAddress(frames[i]);
+        }
+        REXLOG_INFO("  '{}'{}:{}", xthread->name(), xthread->is_guest_thread() ? " (guest)" : "", line);
+      }
+    }
+  }).detach();
+}
+#endif
+
 void ReXApp::LaunchModule() {
   app_context().CallInUIThreadDeferred([this]() {
     // Register the achievement notification callback now that the runtime and
@@ -534,6 +579,9 @@ void ReXApp::LaunchModule() {
 
     OnPostLaunchModule(main_thread.get());
     main_thread->Resume();
+#if REX_PLATFORM_PS5
+    StartProsperoStallDump();
+#endif
 
     module_thread_ = std::thread([this, main_thread = std::move(main_thread)]() mutable {
       main_thread->Wait(0, 0, 0, nullptr);

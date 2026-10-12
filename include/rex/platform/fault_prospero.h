@@ -11,7 +11,10 @@
 #include <cstddef>
 #include <cstdint>
 
+#include <pthread.h>
 #include <signal.h>
+
+#include <string>
 
 namespace rex::platform {
 
@@ -62,5 +65,13 @@ void InitializeProsperoFaultDiagnostics(uint64_t image_base, uint64_t image_end)
 // Signal context: a record of the fault in context (a ucontext_t)
 void ReportProsperoFatalSignal(int signal_number, const siginfo_t* info,
                                const void* context) noexcept;
+
+// Where a running thread is, for a stall dump: interrupts it with SIGPROF and,
+// in its handler, takes its RIP and the return addresses up its frame-pointer
+// chain, within the thread's own stack. Up to capacity addresses into frames;
+// false if the thread did not answer within a second. One at a time.
+bool SampleProsperoThread(pthread_t thread, uint64_t* frames, size_t capacity, size_t* count);
+// An address as the fault records give it: "0x... (elf 0x...)" for the title's code
+std::string FormatProsperoCodeAddress(uint64_t address);
 
 }  // namespace rex::platform

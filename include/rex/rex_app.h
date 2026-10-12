@@ -11,6 +11,7 @@
 
 #pragma once
 
+#include <rex/platform.h>
 #include <atomic>
 #include <cstdint>
 #include <filesystem>
@@ -247,6 +248,9 @@ class ReXApp : public ui::WindowedApp, public ui::WindowListener, public ui::Win
   /// Kick off the deferred module launch: shader storage init,
   /// PrepareModuleLaunch, main thread resume, background wait.
   virtual void LaunchModule();
+#if REX_PLATFORM_PS5
+  void StartProsperoStallDump();
+#endif
 
   // --- Accessors for subclass use ---
   Runtime* runtime() const { return runtime_.get(); }
