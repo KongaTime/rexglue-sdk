@@ -40,6 +40,8 @@
 
 #include <ps5platform/context.h>
 #include <ps5platform/kernel.h>
+
+#include <rex/platform/fault_prospero.h>
 #endif
 
 namespace rex::arch {
@@ -60,7 +62,8 @@ struct sigaction original_sigbus_handler_;
 // while untouched code ended the title when read. sceKernelQueryMemoryProtection
 // answered 0x4 (execute) for the page before and after, so it cannot say whether
 // code is readable; it gives the segment's bounds (0x400000 up in that title).
-// System modules' code stays execute-only.
+// System modules' code stays execute-only. The segment's bounds go to the fault
+// records (rex/platform/fault_prospero.h), which translate addresses in it.
 static void MakeCodeReadable() {
   void* start = nullptr;
   void* end = nullptr;
@@ -69,8 +72,11 @@ static void MakeCodeReadable() {
       reinterpret_cast<void*>(&MakeCodeReadable), &start, &end, &protection);
   if (query != 0) {
     REXLOG_ERROR("PS5: no code segment to make readable (query {:#010x})", static_cast<uint32_t>(query));
+    platform::InitializeProsperoFaultDiagnostics(0, 0);
     return;
   }
+  platform::InitializeProsperoFaultDiagnostics(reinterpret_cast<uint64_t>(start),
+                                               reinterpret_cast<uint64_t>(end));
   const size_t length = static_cast<size_t>(static_cast<uint8_t*>(end) - static_cast<uint8_t*>(start));
   const int32_t result =
       sceKernelMprotect(start, length, PS5_KERNEL_PROT_CPU_READ | PS5_KERNEL_PROT_CPU_EXEC);
@@ -98,6 +104,30 @@ constexpr size_t kMaxHandlerCount = 8;
 // All custom handlers, left-aligned and null terminated.
 // Executed in order.
 std::pair<ExceptionHandler::Handler, void*> handlers_[kMaxHandlerCount];
+
+#if REX_PLATFORM_PS5
+// A fault no handler took: recorded in fault.log, then given to the handler
+// that was there before ReXGlue's, or to the default, so the title ends rather
+// than faulting on the same instruction forever. From TheSimpsonsGame-PS5-
+// Builder's exception_handler_prospero.cpp (ps5/PORTED.md), which records only
+// on the default disposition; here the record comes first either way.
+static void ForwardUnhandledException(int signal_number, siginfo_t* signal_info,
+                                      void* signal_context) {
+  platform::ReportProsperoFatalSignal(signal_number, signal_info, signal_context);
+  const struct sigaction& previous =
+      signal_number == SIGILL ? original_sigill_handler_ : original_sigsegv_handler_;
+  if (previous.sa_handler == SIG_IGN) return;
+  if (previous.sa_handler != SIG_DFL && previous.sa_handler != nullptr) {
+    if (previous.sa_flags & SA_SIGINFO)
+      previous.sa_sigaction(signal_number, signal_info, signal_context);
+    else
+      previous.sa_handler(signal_number);
+    return;
+  }
+  sigaction(signal_number, &previous, nullptr);
+  raise(signal_number);
+}
+#endif
 
 static void ExceptionHandlerCallback(int signal_number, siginfo_t* signal_info,
                                      void* signal_context) {
@@ -518,6 +548,9 @@ static void ExceptionHandlerCallback(int signal_number, siginfo_t* signal_info,
       return;
     }
   }
+#if REX_PLATFORM_PS5
+  ForwardUnhandledException(signal_number, signal_info, signal_context);
+#endif
 }
 
 void ExceptionHandler::Install(Handler fn, void* data) {

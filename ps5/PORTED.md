@@ -22,6 +22,9 @@ later changes there carry over file by file.
 | `include/rex/input/prospero/prospero_input_driver.h`, `src/input/prospero/prospero_input_driver.cpp` | the same paths | rewritten for v0.10.0's device-based `InputDriver`; its pad handling kept, its trace checkpoints and frame-generation shortcut left out; keystrokes as v0.10.0's SDL driver makes them |
 | `include/rex/audio/prospero/audio_out.h` | the same path | — (ps5-payload-dev/SDL's PS5 AudioOut ABI, under SDL's zlib licence, kept in the file) |
 | `include/rex/audio/prospero/pcm_conversion.h` | the same path | v0.10.0's stereo fold and output gain |
+| `include/rex/platform/fault_prospero.h`, `src/core/fault_prospero.cpp` | `include/rex/platform/fault_prospero.h`, `src/core/fault_prospero.cpp` and the record half of `src/core/exception_handler_prospero.cpp` | without the port's trace ring, stack dump and heap-failure hook; the code segment's bounds from the fork's `MakeCodeReadable` instead of `dladdr`; a frame-pointer backtrace and ELF-relative addresses of the fork's own |
+| `src/core/abort_prospero.cpp` | the same path | without its heap-failure hook (the port's own malloc) |
+| `ForwardUnhandledException` in `src/core/exception_handler_posix.cpp` | `src/core/exception_handler_prospero.cpp` | records the fault first, then passes it on (the port records only on the default disposition) |
 | `include/rex/audio/prospero/prospero_audio_{driver,system}.h`, `src/audio/prospero/prospero_audio_{driver,system}.cpp` | the same paths | without its diagnostics, dump files, live mute and thread priority; `audio_mute` as v0.10.0's SDL driver has it |
 
 What the fork does on its own, next to those:
@@ -36,5 +39,6 @@ What the fork does on its own, next to those:
 
 Not taken: the port's guest memory (`memory_prospero.cpp`; this fork's `memory_ps5.cpp`
 is console-checked), fibers, the emulated GPU's PS5 changes, frame generation, the
-settings overlay and the trace and fault reports. EdgeOfTimeRecomp's
+settings overlay, its trace ring and checkpoints (`trace_prospero.cpp`) and its
+per-thread signal registry (`signal_thread_prospero.cpp`). EdgeOfTimeRecomp's
 `docs/PS5-PORTING.md` says what comes next.
