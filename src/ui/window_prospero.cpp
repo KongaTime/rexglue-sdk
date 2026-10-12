@@ -14,15 +14,17 @@
 namespace rex::ui {
 
 std::unique_ptr<Window> Window::Create(WindowedAppContext& app_context,
-                                      std::string_view title,
-                                      uint32_t desired_logical_width,
-                                      uint32_t desired_logical_height) {
+                                      const std::string_view title) {
   if (!dynamic_cast<ProsperoWindowedAppContext*>(&app_context)) {
     REXLOG_ERROR("ProsperoWindow requires the Prospero UI context");
     return nullptr;
   }
-  return std::make_unique<ProsperoWindow>(app_context, title, desired_logical_width,
-                                         desired_logical_height);
+  // The configured size, as the SDL window takes it; the surface is the
+  // display's whatever it says
+  uint32_t width = 0;
+  uint32_t height = 0;
+  ResolveConfiguredLogicalSize(width, height);
+  return std::make_unique<ProsperoWindow>(app_context, title, width, height);
 }
 
 ProsperoWindow::ProsperoWindow(WindowedAppContext& app_context, std::string_view title,

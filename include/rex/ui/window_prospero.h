@@ -16,6 +16,13 @@ class ProsperoWindow final : public Window {
                  uint32_t desired_logical_width, uint32_t desired_logical_height);
   ~ProsperoWindow() override;
 
+  // The one display the title presents to
+  bool GetDisplayPixelSize(uint32_t& width, uint32_t& height) const override {
+    width = GetActualPhysicalWidth();
+    height = GetActualPhysicalHeight();
+    return width && height;
+  }
+
  protected:
   uint32_t GetLatestDpiImpl() const override { return 288; }
   bool OpenImpl() override;
