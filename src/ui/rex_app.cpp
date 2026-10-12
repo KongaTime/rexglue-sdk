@@ -539,6 +539,10 @@ void ReXApp::StartProsperoStallDump() {
                                   : fmt::format("timeout {} x100ns", timeout));
         }
         REXLOG_INFO("{}", line);
+        // The calls that led there, once (the second dump) for each thread that made any
+        if (round == 2 && xthread->call_count()) {
+          REXLOG_INFO("    recent: {}", xthread->recent_calls());
+        }
       }
     }
   }).detach();

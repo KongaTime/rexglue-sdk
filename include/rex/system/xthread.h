@@ -11,6 +11,7 @@
  */
 
 #include <atomic>
+#include <cstring>
 #include <condition_variable>
 #include <mutex>
 #include <string>
@@ -387,7 +388,27 @@ class XThread : public XObject {
   // (rex::system::NoteThreadCall, for the PS5's stall dumps)
   void NoteCall(const char* name) noexcept {
     last_call_.store(name, std::memory_order_relaxed);
-    call_count_.fetch_add(1, std::memory_order_relaxed);
+    const uint64_t n = call_count_.fetch_add(1, std::memory_order_relaxed);
+    call_ring_[n % kCallRing].store(name, std::memory_order_relaxed);
+  }
+  // The last kCallRing calls, oldest first
+  std::string recent_calls() const {
+    const uint64_t n = call_count_.load(std::memory_order_relaxed);
+    std::string text;
+    for (uint64_t i = n > kCallRing ? n - kCallRing : 0; i < n; ++i) {
+      const char* name = call_ring_[i % kCallRing].load(std::memory_order_relaxed);
+      if (!name) {
+        continue;
+      }
+      if (std::strncmp(name, "__imp__", 7) == 0) {
+        name += 7;
+      }
+      if (!text.empty()) {
+        text += ' ';
+      }
+      text += name;
+    }
+    return text;
   }
   const char* last_call() const noexcept { return last_call_.load(std::memory_order_relaxed); }
   uint64_t call_count() const noexcept { return call_count_.load(std::memory_order_relaxed); }
@@ -470,6 +491,8 @@ class XThread : public XObject {
 #if REX_PLATFORM_PS5
   std::atomic<const char*> last_call_{nullptr};
   std::atomic<uint64_t> call_count_{0};
+  static constexpr uint64_t kCallRing = 24;
+  std::atomic<const char*> call_ring_[kCallRing] = {};
   std::atomic<bool> waiting_{false};
   std::atomic<uint32_t> wait_handle_{0};
   std::atomic<uint32_t> wait_type_{0};
