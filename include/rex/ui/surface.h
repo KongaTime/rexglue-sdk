@@ -36,6 +36,9 @@ class Surface {
     kTypeIndex_Win32Hwnd,
     // macOS — CAMetalLayer presented via MoltenVK (VK_EXT_metal_surface).
     kTypeIndex_CAMetalLayer,
+    // PS5 — the display itself (VK_KHR_display on PS5_Mesa's VideoOut), from
+    // TheSimpsonsGame-PS5-Builder's port (surface_prospero.h).
+    kTypeIndex_ProsperoDisplay,
   };
   using TypeFlags = uint32_t;
   enum : TypeFlags {
@@ -44,6 +47,7 @@ class Surface {
     kTypeFlag_XcbWindow = TypeFlags(1) << kTypeIndex_XcbWindow,
     kTypeFlag_Win32Hwnd = TypeFlags(1) << kTypeIndex_Win32Hwnd,
     kTypeFlag_CAMetalLayer = TypeFlags(1) << kTypeIndex_CAMetalLayer,
+    kTypeFlag_ProsperoDisplay = TypeFlags(1) << kTypeIndex_ProsperoDisplay,
   };
 
   Surface(const Surface& surface) = delete;

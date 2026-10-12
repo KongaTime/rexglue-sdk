@@ -26,7 +26,13 @@
 #include <rex/ui/overlay/debug_overlay.h>
 #include <rex/ui/overlay/settings_overlay.h>
 #include <rex/audio/audio_system.h>
+#include <rex/platform.h>
+#if REX_PLATFORM_PS5
+#include <rex/audio/prospero/prospero_audio_system.h>
+#include <rex/ui/startup_prospero.h>
+#else
 #include <rex/audio/sdl/sdl_audio_system.h>
+#endif
 #include <rex/input/input_system.h>
 #include <rex/kernel/init.h>
 #include <rex/string/numeric.h>
@@ -83,11 +89,26 @@ system::AchievementManager& ReXApp::achievements() const {
   return runtime_->kernel_state()->achievements();
 }
 
+namespace {
+// PS5: a marker in the startup log (rex/ui/startup_prospero.h) for each stage,
+// so a boot that stops shows where
+void LogStartupStage(const char* message) {
+#if REX_PLATFORM_PS5
+  prospero_startup_log(message);
+#else
+  (void)message;
+#endif
+}
+}  // namespace
+
 bool ReXApp::OnInitialize() {
+  LogStartupStage("app: environment");
   if (!SetupEnvironment())
     return false;
+  LogStartupStage("app: presentation");
   if (!SetupPresentation())
     return false;
+  LogStartupStage("app: paths");
 
   auto paths = OnFinalizePaths(resolved_defaults_, MakeResumeCallback());
   if (!paths) {
@@ -96,8 +117,10 @@ bool ReXApp::OnInitialize() {
     return true;
   }
 
+  LogStartupStage("app: runtime");
   if (!ConstructRuntime(*paths))
     return false;
+  LogStartupStage("app: launching the module");
   LaunchModule();
   return true;
 }
@@ -110,6 +133,13 @@ bool ReXApp::SetupEnvironment() {
   if (!game_data_cvar.empty()) {
     game_dir = game_data_cvar;
   }
+#if REX_PLATFORM_PS5
+  // The game's files sit in the title's folder, as the Simpsons Game's PS5
+  // port lays them out (/app0/gamedata)
+  else if (std::filesystem::is_directory(exe_dir / "gamedata")) {
+    game_dir = exe_dir / "gamedata";
+  }
+#endif
 
   // User data: cvar override, or platform user directory
   std::filesystem::path user_dir;
@@ -168,7 +198,13 @@ bool ReXApp::SetupEnvironment() {
                                         log_level_str, category_levels);
   if (log_file_cvar.empty()) {
     log_config.app_name = std::string(GetName());
+#if REX_PLATFORM_PS5
+    // Beside the startup log, in the title's state folder (writable even when
+    // /app0 is a read-only image)
+    log_config.log_dir = (std::filesystem::path(prospero_state_root()) / "logs").string();
+#else
     log_config.log_dir = (exe_dir / "logs").string();
+#endif
   }
 
   rex::InitLogging(log_config);
@@ -307,7 +343,11 @@ bool ReXApp::ConstructRuntime(const PathConfig& paths) {
 
 bool ReXApp::SetupPresentation() {
   config_.gpu_plugin = REXCVAR_GET(gpu_plugin);
+#if REX_PLATFORM_PS5
+  config_.audio_factory = REX_AUDIO_BACKEND(rex::audio::prospero::ProsperoAudioSystem);
+#else
   config_.audio_factory = REX_AUDIO_BACKEND(rex::audio::sdl::SDLAudioSystem);
+#endif
   config_.input_factory = REX_INPUT_BACKEND(rex::input::CreateDefaultInputSystem);
   config_.kernel_init = rex::kernel::InitializeKernel;
 

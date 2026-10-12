@@ -66,7 +66,8 @@ endfunction()
 # rexglue_configure_target(<target>) - Host application
 #
 # Adds:
-#   - SDL3 entry point source (windowed_app_main_sdl.cpp)
+#   - SDL3 entry point source (windowed_app_main_sdl.cpp; on the PS5 the
+#     runtime's rex_ps5_app_main instead)
 #   - ReXApp base class source (rex_app.cpp)
 #   - Build-config define for the version stamp
 #   - $ORIGIN RPATH on UNIX so the host finds librexruntime.so next to itself
@@ -77,9 +78,16 @@ endfunction()
 function(rexglue_configure_target target_name)
     cmake_parse_arguments(ARG "" "" "GPU_PLUGINS" ${ARGN})
 
-    target_sources(${target_name} PRIVATE
-        ${REXGLUE_SHARE_DIR}/windowed_app_main_sdl.cpp
-        ${REXGLUE_SHARE_DIR}/rex_app.cpp)
+    if(PROSPERO)
+        # PS5: the entry is rex_ps5_app_main in the runtime (ui/
+        # windowed_app_main_prospero.cpp), which the title's own main calls
+        target_sources(${target_name} PRIVATE
+            ${REXGLUE_SHARE_DIR}/rex_app.cpp)
+    else()
+        target_sources(${target_name} PRIVATE
+            ${REXGLUE_SHARE_DIR}/windowed_app_main_sdl.cpp
+            ${REXGLUE_SHARE_DIR}/rex_app.cpp)
+    endif()
 
     target_compile_definitions(${target_name} PRIVATE
         REXGLUE_BUILD_CONFIG="$<CONFIG>")

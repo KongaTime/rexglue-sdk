@@ -23,8 +23,12 @@ below this section is upstream's README, unchanged.
   the fork's own (`src/core/fiber_switch_x64.h`), since the console's `makecontext`
   is unusable. Guest memory is direct memory (`src/core/memory_ps5.cpp`), backed in
   2 MiB chunks as it is committed; `ps5/tests` checks it on the build host and on the
-  console. The MMIO handler's reads of execute-only code still need their PS5
-  version, and the runtime itself has not run on a console yet.
+  console. The title's code is made readable when the exception handler installs, for
+  the MMIO handler. The app's window, display surface, entry (`rex_ps5_app_main`),
+  controller (`scePad`) and sound (`sceAudioOut`) are ported from
+  [TheSimpsonsGame-PS5-Builder](https://github.com/LoZazaMastro/TheSimpsonsGame-PS5-Builder)'s
+  PS5 port of ReXGlue (`ps5/PORTED.md`), in place of SDL3. The runtime itself has not
+  run on a console yet.
 - **Keeping in step:** upstream is merged in, never rebased onto.
 
 > [!CAUTION]

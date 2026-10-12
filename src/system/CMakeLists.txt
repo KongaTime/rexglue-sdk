@@ -89,7 +89,7 @@ target_link_libraries(rexruntime
         fmt::fmt
         spdlog::spdlog
         tomlplusplus
-        SDL3::SDL3
+        $<$<NOT:$<BOOL:${PROSPERO}>>:SDL3::SDL3>
     PRIVATE
         aes128
         mspack

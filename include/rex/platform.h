@@ -66,6 +66,11 @@
 #ifndef REX_PLATFORM_PS5
 #define REX_PLATFORM_PS5 0
 #endif
+// The name the PS5 files ported from TheSimpsonsGame-PS5-Builder use (the
+// *_prospero.cpp files, ps5/PORTED.md); the same platform as REX_PLATFORM_PS5.
+#ifndef REX_PLATFORM_PROSPERO
+#define REX_PLATFORM_PROSPERO REX_PLATFORM_PS5
+#endif
 
 #if defined(__clang__)
 #define REX_COMPILER_CLANG 1

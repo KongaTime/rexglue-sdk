@@ -41,8 +41,11 @@ set(REQUIRED_SUBMODULES
     fmt
     utfcpp
     imgui
-    sdl3
 )
+if(NOT PROSPERO)
+    # PS5: no SDL; the window, sound and controller are ReXGlue's own PS5 ones
+    list(APPEND REQUIRED_SUBMODULES sdl3)
+endif()
 
 if(REXGLUE_USE_VULKAN)
     list(APPEND REQUIRED_SUBMODULES
@@ -301,7 +304,9 @@ if(UNIX AND NOT APPLE)
     set(SDL_PIPEWIRE_SHARED   ON  CACHE BOOL "" FORCE)
 endif()
 
-add_subdirectory(sdl3)
+if(NOT PROSPERO)
+    add_subdirectory(sdl3)
+endif()
 
 #=============================================================================
 # DXC API headers (vendored from DirectXShaderCompiler, runtime-loaded)

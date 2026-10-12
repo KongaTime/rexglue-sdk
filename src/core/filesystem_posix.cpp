@@ -28,6 +28,10 @@
 #include <rex/filesystem.h>
 #include <rex/logging.h>
 #include <rex/platform/env.h>
+#include <rex/platform.h>
+#if REX_PLATFORM_PS5
+#include <rex/ui/startup_prospero.h>
+#endif
 #include <rex/string.h>
 
 #include <dirent.h>
@@ -71,7 +75,10 @@ std::filesystem::path to_path(const std::u16string_view source) {
 namespace filesystem {
 
 std::filesystem::path GetExecutablePath() {
-#if defined(__APPLE__)
+#if REX_PLATFORM_PS5
+  // No /proc on the console: a title is /app0/eboot.bin
+  return std::filesystem::path("/app0") / "eboot.bin";
+#elif defined(__APPLE__)
   // Darwin has no /proc; query the executable path via the dyld API. The first
   // call reports the required buffer size.
   uint32_t executable_path_size = 0;
@@ -105,6 +112,11 @@ std::filesystem::path GetExecutableFolder() {
 }
 
 std::filesystem::path GetUserFolder() {
+#if REX_PLATFORM_PS5
+  // The title's state folder (/app0 unless the title names another; see
+  // rex/ui/startup_prospero.h), not HOME or the passwd entry
+  return std::filesystem::path(prospero_state_root()) / "userdata";
+#endif
   // get preferred data home
   if (auto xdg = rex::platform::env::get("XDG_DATA_HOME")) {
     return std::filesystem::path(*xdg);
