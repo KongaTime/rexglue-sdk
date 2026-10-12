@@ -516,10 +516,29 @@ void ReXApp::StartProsperoStallDump() {
       }
       auto threads = state->object_table()->GetObjectsByType<system::XThread>();
       REXLOG_INFO("PS5 stall dump {} ({} s after launch): {} threads", round, round * 10, threads.size());
+      static constexpr const char* kTypes[] = {"Undefined", "Enumerator", "Event", "File", "IOCompletion",
+                                               "Module", "Mutant", "NotifyListener", "Semaphore", "Session",
+                                               "Socket", "SymbolicLink", "Thread", "Timer"};
       for (auto& xthread : threads) {
         const char* last = xthread->last_call();
-        REXLOG_INFO("  '{}'{}: {} calls, last {}", xthread->name(), xthread->is_guest_thread() ? " (guest)" : "",
-                    xthread->call_count(), last ? last : "(none)");
+        const auto* params = xthread->creation_params();
+        std::string line = fmt::format("  {:08X} '{}'{} start {:08X}{}: {} calls, last {}", xthread->handle(),
+                                       xthread->thread_name(), xthread->is_guest_thread() ? " (guest)" : "",
+                                       params->start_address,
+                                       params->xapi_thread_startup
+                                           ? fmt::format(" (via {:08X})", params->xapi_thread_startup)
+                                           : std::string(),
+                                       xthread->call_count(), last ? last : "(none)");
+        if (xthread->waiting()) {
+          const uint32_t type = xthread->wait_type();
+          const int64_t timeout = xthread->wait_timeout();
+          line += fmt::format("; waiting on {:08X} ({} at {:08X}, {})", xthread->wait_handle(),
+                              type < std::size(kTypes) ? kTypes[type] : "?", xthread->wait_object(),
+                              timeout == system::XThread::kNoWaitTimeout
+                                  ? std::string("no timeout")
+                                  : fmt::format("timeout {} x100ns", timeout));
+        }
+        REXLOG_INFO("{}", line);
       }
     }
   }).detach();

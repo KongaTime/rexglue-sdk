@@ -857,7 +857,20 @@ u32 NtWaitForSingleObjectEx_entry(u32 object_handle, u32 wait_mode, u32 alertabl
   auto object = REX_KERNEL_OBJECTS()->LookupObject<XObject>(object_handle);
   if (object) {
     uint64_t timeout = timeout_ptr ? static_cast<uint64_t>(*timeout_ptr) : 0u;
+#if REX_PLATFORM_PS5
+    // What it waits on, for the PS5's stall dumps (ReXApp::StartProsperoStallDump)
+    XThread* self = XThread::GetCurrentThread();
+    if (self) {
+      self->NoteWait(object_handle, static_cast<uint32_t>(object->type()), object->guest_object(),
+                     timeout_ptr ? static_cast<int64_t>(timeout) : XThread::kNoWaitTimeout);
+    }
+#endif
     result = object->Wait(3, wait_mode, alertable, timeout_ptr ? &timeout : nullptr);
+#if REX_PLATFORM_PS5
+    if (self) {
+      self->NoteWaitDone();
+    }
+#endif
     if (alertable && result == X_STATUS_USER_APC) {
       XThread::GetCurrentThread()->DeliverAPCs();
     }
