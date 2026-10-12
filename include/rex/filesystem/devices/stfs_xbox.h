@@ -42,6 +42,24 @@ inline uint64_t decode_fat_timestamp(const uint32_t date, const uint32_t time) {
 
 #if REX_PLATFORM_WIN32
   time_t timet = _mkgmtime(&tm);
+#elif REX_PLATFORM_PS5
+  // The console's libc has no timegm. UTC from the civil date (Howard Hinnant's
+  // days_from_civil), with timegm's normalization of the month; the same as
+  // glibc's timegm for every FAT date and time (all 65536 dates, five times each)
+  time_t timet;
+  {
+    int64_t y = int64_t(tm.tm_year) + 1900;
+    int64_t m = tm.tm_mon;
+    y += m >= 0 ? m / 12 : (m - 11) / 12;
+    m = ((m % 12) + 12) % 12 + 1;
+    y -= m <= 2;
+    const int64_t era = (y >= 0 ? y : y - 399) / 400;
+    const int64_t yoe = y - era * 400;
+    const int64_t doy = (153 * (m + (m > 2 ? -3 : 9)) + 2) / 5 + tm.tm_mday - 1;
+    const int64_t doe = yoe * 365 + yoe / 4 - yoe / 100 + doy;
+    const int64_t days = era * 146097 + doe - 719468;
+    timet = time_t(days * 86400 + int64_t(tm.tm_hour) * 3600 + int64_t(tm.tm_min) * 60 + tm.tm_sec);
+  }
 #else
   time_t timet = timegm(&tm);
 #endif

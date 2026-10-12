@@ -34,7 +34,12 @@ uint8_t tzcnt(uint64_t v) {
 }
 
 bool bit_scan_forward(uint32_t v, uint32_t* out_first_set_index) {
+#if REX_PLATFORM_PS5
+  // The console's libc has no ffs, and a title does not link the SDK's libc.a
+  int i = __builtin_ffs(static_cast<int>(v));
+#else
   int i = ffs(v);
+#endif
   *out_first_set_index = i - 1;
   return i != 0;
 }
