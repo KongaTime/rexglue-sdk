@@ -96,7 +96,15 @@ if(REXGLUE_USE_D3D12)
         ${REXGPU_XENOS_D3D12_SOURCES})
 endif()
 
-add_library(rexgpu-xenos SHARED ${REXGPU_XENOS_SOURCES})
+# PS5: a title loads no shared library, so the GPU is linked into it, and a
+# host creates the graphics system itself (or registers rex_gpu_create)
+if(PROSPERO)
+    add_library(rexgpu-xenos STATIC ${REXGPU_XENOS_SOURCES})
+    set_target_properties(rexgpu-xenos PROPERTIES
+        ARCHIVE_OUTPUT_DIRECTORY ${REXGLUE_ROOT}/out/ps5-amd64)
+else()
+    add_library(rexgpu-xenos SHARED ${REXGPU_XENOS_SOURCES})
+endif()
 add_library(rex::gpu-xenos ALIAS rexgpu-xenos)
 
 set_target_properties(rexgpu-xenos PROPERTIES

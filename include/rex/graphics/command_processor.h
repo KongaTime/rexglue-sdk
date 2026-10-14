@@ -139,6 +139,11 @@ class CommandProcessor {
   };
 
   void WorkerThreadMain();
+  // The default (linear) gamma ramps, which Initialize sets before it starts
+  // the worker: for a host that drives the command processor from its own
+  // thread instead (SetupContext there, no worker)
+  void InitializeGammaRamps();
+
   virtual bool SetupContext() = 0;
   virtual void ShutdownContext() = 0;
 

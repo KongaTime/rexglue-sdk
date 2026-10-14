@@ -688,9 +688,34 @@ void Memory::UnregisterPhysicalMemoryInvalidationCallback(void* callback_handle)
   delete entry;
 }
 
+bool Memory::InitializeExternal(uint8_t* virtual_membase, uint8_t* physical_membase,
+                                ExternalWatchFunction watch, void* watch_context) {
+  if (!virtual_membase || !physical_membase || !watch) {
+    return false;
+  }
+  virtual_membase_ = virtual_membase;
+  physical_membase_ = physical_membase;
+  external_watch_ = watch;
+  external_watch_context_ = watch_context;
+  return true;
+}
+
+void Memory::NotifyExternalPhysicalWrite(uint32_t physical_address, uint32_t length) {
+  auto lock = global_critical_region_.Acquire();
+  for (auto invalidation_callback : physical_memory_invalidation_callbacks_) {
+    invalidation_callback->first(invalidation_callback->second, physical_address, length, true);
+  }
+}
+
 void Memory::EnablePhysicalMemoryAccessCallbacks(uint32_t physical_address, uint32_t length,
                                                  bool enable_invalidation_notifications,
                                                  bool enable_data_providers) {
+  if (external_watch_) {
+    if (enable_invalidation_notifications) {
+      external_watch_(external_watch_context_, physical_address, length);
+    }
+    return;
+  }
   heaps_.vA0000000.EnableAccessCallbacks(physical_address, length,
                                          enable_invalidation_notifications, enable_data_providers);
   heaps_.vC0000000.EnableAccessCallbacks(physical_address, length,

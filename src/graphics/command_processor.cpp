@@ -116,6 +116,21 @@ CommandProcessor::CommandProcessor(GraphicsSystem* graphics_system,
 CommandProcessor::~CommandProcessor() = default;
 
 bool CommandProcessor::Initialize() {
+  InitializeGammaRamps();
+
+  worker_running_ = true;
+  worker_thread_ = system::object_ref<system::XHostThread>(
+      new system::XHostThread(kernel_state_, 128 * 1024, 0, [this]() {
+        WorkerThreadMain();
+        return 0;
+      }));
+  worker_thread_->set_name("GPU Commands");
+  worker_thread_->Create();
+
+  return true;
+}
+
+void CommandProcessor::InitializeGammaRamps() {
   // Initialize the gamma ramps to their default (linear) values - taken from
   // what games set when starting with the sRGB (return value 1)
   // VdGetCurrentDisplayGamma.
@@ -134,17 +149,6 @@ bool CommandProcessor::Initialize() {
       gamma_ramp_pwl_rgb_[i][j] = gamma_ramp_entry;
     }
   }
-
-  worker_running_ = true;
-  worker_thread_ = system::object_ref<system::XHostThread>(
-      new system::XHostThread(kernel_state_, 128 * 1024, 0, [this]() {
-        WorkerThreadMain();
-        return 0;
-      }));
-  worker_thread_->set_name("GPU Commands");
-  worker_thread_->Create();
-
-  return true;
 }
 
 void CommandProcessor::Shutdown() {
