@@ -19,8 +19,20 @@
 #include <rex/assert.h>
 #include <rex/graphics/flags.h>
 #include <rex/graphics/pipeline/shader/translator.h>
+#include <rex/cvar.h>
 #include <rex/logging.h>
 #include <rex/math.h>
+
+// Which lanes of the third source a two-component scalar operation (adds,
+// muls, maxs and the like) reads. Xenia reads w and x always. A title's
+// compiler can put them in z and w instead when the vector operation issued
+// with it takes three operands (mad, the conditional moves, dp2add), which
+// read lanes x, y and z of the same source: CoD3Recomp found Call of Duty 3's
+// programs that way (its grass blades lie flat, and the vertices stretch
+// across the screen, read as w and x).
+REXCVAR_DEFINE_BOOL(gpu_scalar_pair_lanes_follow_vector_op, false, "GPU/Shader",
+                    "Read a two-component scalar operand from lanes z and w when the "
+                    "vector operation takes three operands");
 
 namespace rex::graphics {
 
@@ -1350,6 +1362,13 @@ void ParseAluInstruction(const AluInstruction& op, xenos::ShaderType shader_type
     if (instr.scalar_operand_count == 1) {
       ParseAluInstructionOperand(op, 3, scalar_opcode_info.single_operand_is_two_component ? 2 : 1,
                                  instr.scalar_operands[0]);
+      if (scalar_opcode_info.single_operand_is_two_component &&
+          REXCVAR_GET(gpu_scalar_pair_lanes_follow_vector_op) &&
+          instr.vector_operand_count == 3) {
+        uint32_t src3_swizzle = op.src_swizzle(3);
+        instr.scalar_operands[0].components[0] = GetSwizzledAluSourceComponent(src3_swizzle, 2);
+        instr.scalar_operands[0].components[1] = GetSwizzledAluSourceComponent(src3_swizzle, 3);
+      }
     } else {
       // Constant and temporary register.
 
