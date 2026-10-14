@@ -110,6 +110,14 @@ bool VulkanSubmissionTracker::AwaitSubmissionCompletion(uint64_t submission_inde
   // "Fence signal operations that are defined by vkQueueSubmit additionally
   // include in the first synchronization scope all commands that occur earlier
   // in submission order."
+  // Completion is a monotonic timeline. A later successful signal also proves
+  // earlier submissions complete, and index 0 means "never referenced". Do not
+  // poll or wait for unrelated work when the requested usage is already safe.
+  // (Ported from TheSimpsonsGame-PS5-Builder, LoZazaMastro and contributors,
+  // src/ui/vulkan/vulkan_submission_tracker.cpp at 59e7086, BSD 3-Clause.)
+  if (submission_index <= submission_completed_on_gpu_) {
+    return true;
+  }
   size_t reclaim_end = fences_pending_.size();
   if (reclaim_end) {
     const VulkanDevice::Functions& dfn = vulkan_device_->functions();
@@ -138,7 +146,10 @@ bool VulkanSubmissionTracker::AwaitSubmissionCompletion(uint64_t submission_inde
       }
     }
   }
-  return submission_completed_on_gpu_ == submission_index;
+  // A newer fence may have completed while checking the pending submissions.
+  // It covers the requested submission too; only an earlier completion is an
+  // approximation that must not be reported as success to strict callers.
+  return submission_completed_on_gpu_ >= submission_index;
 }
 
 VulkanSubmissionTracker::FenceAcquisition
