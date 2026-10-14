@@ -104,6 +104,11 @@ set(REXUI_SOURCES
 
 if(REXGLUE_USE_VULKAN)
     list(APPEND REXUI_SOURCES ${REXUI_VULKAN_SOURCES})
+    if(PROSPERO)
+        # PS5: the VideoOut display through RADV's VK_KHR_display, ported from
+        # TheSimpsonsGame-PS5-Builder (ps5/PORTED.md)
+        list(APPEND REXUI_SOURCES vulkan/vulkan_display_prospero.cpp)
+    endif()
 endif()
 
 if(REXGLUE_USE_D3D12)
@@ -162,6 +167,13 @@ if(REXGLUE_USE_VULKAN)
         GPUOpen::VulkanMemoryAllocator
         spirv-tools-headers
     )
+endif()
+# PS5: no library is loaded at run time, so SPIR-V validation needs SPIRV-Tools
+# linked in. This tree vendors only its headers; a build that adds the
+# SPIRV-Tools-static target gets validation (spirv_tools_context.cpp).
+if(REXGLUE_USE_VULKAN AND PROSPERO AND TARGET SPIRV-Tools-static)
+    target_link_libraries(rexui PUBLIC SPIRV-Tools-static)
+    target_compile_definitions(rexui PRIVATE REX_HAS_SPIRV_TOOLS_STATIC=1)
 endif()
 
 # Platform-specific dependencies

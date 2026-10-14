@@ -11,6 +11,7 @@
 
 #include <algorithm>
 #include <atomic>
+#include <chrono>
 #include <cstddef>
 #include <cstdint>
 #include <cmath>
@@ -44,6 +45,14 @@
 #endif
 #if REX_PLATFORM_MAC
 #include <rex/ui/surface_mac.h>
+#endif
+#if REX_PLATFORM_PS5
+// The PS5 blocks here are ported from TheSimpsonsGame-PS5-Builder (LoZazaMastro
+// and contributors), tools/rexglue-sdk/src/ui/vulkan/vulkan_presenter.cpp at
+// 59e7086, BSD 3-Clause License (see LICENSE); without its frame generation,
+// live settings, tracing and metrics.
+#include <rex/ui/surface_prospero.h>
+#include <rex/ui/vulkan/display_prospero.h>
 #endif
 
 REXCVAR_DEFINE_BOOL(present_render_pass_clear, true, "UI/Presenter",
@@ -423,6 +432,11 @@ Surface::TypeFlags VulkanPresenter::GetSurfaceTypesSupportedByInstance(
     return 0;
   }
   Surface::TypeFlags type_flags = 0;
+#if REX_PLATFORM_PS5
+  if (instance_extensions.ext_KHR_display) {
+    type_flags |= Surface::kTypeFlag_ProsperoDisplay;
+  }
+#endif
 #if REX_PLATFORM_ANDROID
   if (instance_extensions.ext_KHR_android_surface) {
     type_flags |= Surface::kTypeFlag_AndroidNativeWindow;
@@ -796,6 +810,14 @@ VulkanPresenter::ConnectOrReconnectPaintingToSurfaceFromUIThread(Surface& new_su
     }
     VkResult vulkan_surface_create_result = VK_ERROR_UNKNOWN;
     switch (surface_type) {
+#if REX_PLATFORM_PS5
+      case Surface::kTypeIndex_ProsperoDisplay:
+        vulkan_surface_create_result =
+            CreateProsperoDisplaySurface(*vulkan_device_->vulkan_instance(),
+                                         vulkan_device_->physical_device(),
+                                         &paint_context_.vulkan_surface);
+        break;
+#endif
 #if REX_PLATFORM_ANDROID
       case Surface::kTypeIndex_AndroidNativeWindow: {
         auto& android_native_window_surface =
@@ -1535,8 +1557,40 @@ Presenter::PaintResult VulkanPresenter::PaintAndPresentImpl(bool execute_ui_draw
       paint_context_.submission_tracker.GetCurrentSubmission();
   uint64_t paint_submission_count = uint64_t(paint_context_.submissions.size());
   if (current_paint_submission_index >= paint_submission_count) {
-    paint_context_.submission_tracker.AwaitSubmissionCompletion(current_paint_submission_index -
-                                                                paint_submission_count);
+    const uint64_t required_submission = current_paint_submission_index - paint_submission_count;
+    [[maybe_unused]] const bool slot_completed =
+        paint_context_.submission_tracker.AwaitSubmissionCompletion(required_submission);
+#if REX_PLATFORM_PS5
+    if (!slot_completed) {
+      // Don't reset the slot's command pool or overwrite its descriptors while
+      // its last submission's completion is unproven. A failed fence wait
+      // doesn't mean the surface is outdated: keeping the connection avoids an
+      // endless swapchain recreation loop on the console's one display.
+      const uint64_t failures = ++paint_context_.submission_wait_failures;
+      const uint64_t now_ns = uint64_t(std::chrono::duration_cast<std::chrono::nanoseconds>(
+                                           std::chrono::steady_clock::now().time_since_epoch())
+                                           .count());
+      if (failures == 1 || now_ns - paint_context_.submission_wait_last_log_ns >=
+                               uint64_t(5000000000)) {
+        REXLOG_ERROR(
+            "VulkanPresenter: paint deferred; submission completion unproven requested={} "
+            "completed={} current={} failures={}; keeping the swapchain",
+            required_submission,
+            paint_context_.submission_tracker.UpdateAndGetCompletedSubmission(),
+            current_paint_submission_index, failures);
+        paint_context_.submission_wait_last_log_ns = now_ns;
+      }
+      return PaintResult::kNotPresented;
+    }
+    if (paint_context_.submission_wait_failures) {
+      REXLOG_INFO(
+          "VulkanPresenter: submission completion recovered after {} deferred paints; "
+          "resuming with the existing swapchain",
+          paint_context_.submission_wait_failures);
+      paint_context_.submission_wait_failures = 0;
+      paint_context_.submission_wait_last_log_ns = 0;
+    }
+#endif
   }
   const PaintContext::Submission& paint_submission =
       *paint_context_.submissions[current_paint_submission_index % paint_submission_count];

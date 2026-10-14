@@ -25,6 +25,8 @@ later changes there carry over file by file.
 | `include/rex/platform/fault_prospero.h`, `src/core/fault_prospero.cpp` | `include/rex/platform/fault_prospero.h`, `src/core/fault_prospero.cpp` and the record half of `src/core/exception_handler_prospero.cpp` | without the port's trace ring, stack dump and heap-failure hook; the code segment's bounds from the fork's `MakeCodeReadable` instead of `dladdr`; a frame-pointer backtrace and ELF-relative addresses of the fork's own |
 | `src/core/abort_prospero.cpp` | the same path | without its heap-failure hook (the port's own malloc) |
 | `ForwardUnhandledException` in `src/core/exception_handler_posix.cpp` | `src/core/exception_handler_prospero.cpp` | records the fault first, then passes it on (the port records only on the default disposition) |
+| `include/rex/ui/vulkan/display_prospero.h`, `src/ui/vulkan/vulkan_display_prospero.cpp`, `include/rex/ui/vulkan/functions/instance_khr_display.inc` | the same paths | for PS5_Vulkan's RADV: 119.88 Hz comes from param.json (no `SIMPSONS_VIDEOOUT_120HZ`), the output clock from the advertised modes (no `simpsons_radv_videoout_refresh_millihertz`), and a 60 Hz request on a 119.88 Hz output paced with `wsi_videoout_set_flip_rate(1)` |
+| the PS5 blocks of `src/ui/vulkan/vulkan_instance.cpp`, `vulkan_presenter.cpp`, `spirv_tools_context.cpp`, `src/ui/renderdoc_api.cpp`, `src/graphics/vulkan/command_processor.cpp` | the same paths | RADV through `vk_icdGetInstanceProcAddr`, no loader or layers, VK_KHR_display, the display surface, deferred paints on an unproven fence, a refresher that reports a failed submission; without frame generation, live settings, tracing and metrics; SPIRV-Tools only when a build links `SPIRV-Tools-static` |
 | `include/rex/audio/prospero/prospero_audio_{driver,system}.h`, `src/audio/prospero/prospero_audio_{driver,system}.cpp` | the same paths | without its diagnostics, dump files, live mute and thread priority; `audio_mute` as v0.10.0's SDL driver has it |
 
 What the fork does on its own, next to those:
@@ -38,7 +40,8 @@ What the fork does on its own, next to those:
 - SDL3 is neither built nor linked for the PS5.
 
 Not taken: the port's guest memory (`memory_prospero.cpp`; this fork's `memory_ps5.cpp`
-is console-checked), fibers, the emulated GPU's PS5 changes, frame generation, the
+is console-checked), fibers, the emulated GPU's PS5 changes beyond those above (most attach to the port's native
+render-target and lazy-allocation paths, which this tree doesn't have), frame generation, the
 settings overlay, its trace ring and checkpoints (`trace_prospero.cpp`) and its
 per-thread signal registry (`signal_thread_prospero.cpp`). EdgeOfTimeRecomp's
 `docs/PS5-PORTING.md` says what comes next.

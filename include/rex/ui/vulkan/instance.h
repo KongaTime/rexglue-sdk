@@ -55,6 +55,10 @@ class VulkanInstance {
 #include <rex/ui/vulkan/functions/instance_1_0.inc>
     // VK_KHR_surface (#1)
 #include <rex/ui/vulkan/functions/instance_khr_surface.inc>
+    // VK_KHR_display (#3), the PS5's only surface
+#if REX_PLATFORM_PS5
+#include <rex/ui/vulkan/functions/instance_khr_display.inc>
+#endif
     // VK_KHR_xcb_surface (#6)
 #ifdef VK_USE_PLATFORM_XCB_KHR
 #include <rex/ui/vulkan/functions/instance_khr_xcb_surface.inc>
@@ -91,6 +95,9 @@ class VulkanInstance {
   // supported (with the `ext_major_minor_` prefix rather than `ext_`).
   struct Extensions {
     bool ext_KHR_surface = false;  // #1
+#if REX_PLATFORM_PS5
+    bool ext_KHR_display = false;  // #3
+#endif
 #ifdef VK_USE_PLATFORM_XCB_KHR
     bool ext_KHR_xcb_surface = false;  // #6
 #endif

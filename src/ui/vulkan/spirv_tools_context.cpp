@@ -25,6 +25,23 @@ namespace ui {
 namespace vulkan {
 
 bool SpirvToolsContext::Initialize(unsigned int spirv_version) {
+#if REX_PLATFORM_PS5
+  // The console loads no libraries: SPIRV-Tools, when the title has it, is
+  // linked in (REX_HAS_SPIRV_TOOLS_STATIC, src/ui/CMakeLists.txt). From
+  // TheSimpsonsGame-PS5-Builder (LoZazaMastro and contributors),
+  // tools/rexglue-sdk/src/ui/vulkan/spirv_tools_context.cpp at 59e7086, BSD
+  // 3-Clause License (see LICENSE).
+  Shutdown();
+#if defined(REX_HAS_SPIRV_TOOLS_STATIC) && REX_HAS_SPIRV_TOOLS_STATIC
+  fn_spvContextCreate_ = &spvContextCreate;
+  fn_spvContextDestroy_ = &spvContextDestroy;
+  fn_spvValidateBinary_ = &spvValidateBinary;
+  fn_spvDiagnosticDestroy_ = &spvDiagnosticDestroy;
+#else
+  REXLOG_INFO("SPIRV-Tools: not linked into this title; SPIR-V validation is disabled");
+  return false;
+#endif
+#else
   std::filesystem::path library_path;
 
 #if REX_PLATFORM_MAC
@@ -58,6 +75,7 @@ bool SpirvToolsContext::Initialize(unsigned int spirv_version) {
     Shutdown();
     return false;
   }
+#endif  // REX_PLATFORM_PS5
   spv_target_env target_env;
   if (spirv_version >= 0x10500) {
     target_env = SPV_ENV_VULKAN_1_2;
@@ -82,7 +100,9 @@ void SpirvToolsContext::Shutdown() {
     fn_spvContextDestroy_(context_);
     context_ = nullptr;
   }
+#if !REX_PLATFORM_PS5
   library_.Close();
+#endif
 }
 
 spv_result_t SpirvToolsContext::Validate(const uint32_t* words, size_t num_words,

@@ -368,6 +368,12 @@ class VulkanPresenter final : public Presenter {
 
     std::array<std::unique_ptr<PaintContext::Submission>, kSubmissionCount> submissions;
     VulkanSubmissionTracker submission_tracker;
+#if REX_PLATFORM_PS5
+    // Paints deferred because a submission slot's completion was unproven, and
+    // when that was last logged (painting is serialized).
+    uint64_t submission_wait_failures = 0;
+    uint64_t submission_wait_last_log_ns = 0;
+#endif
 
     std::array<GuestOutputPaintPipeline, size_t(GuestOutputPaintEffect::kCount)>
         guest_output_paint_pipelines;

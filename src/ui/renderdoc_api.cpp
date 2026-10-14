@@ -20,6 +20,10 @@ std::unique_ptr<RenderDocAPI> RenderDocAPI::CreateIfConnected() {
   // The vendored RenderDoc app API header doesn't expose a macOS path.
   // Keep RenderDoc optional and simply report "not connected" on this platform.
   return nullptr;
+#elif REX_PLATFORM_PS5
+  // The title links RADV directly and loads no libraries: there is no RenderDoc
+  // layer to find (as in TheSimpsonsGame-PS5-Builder's renderdoc_api.cpp).
+  return nullptr;
 #else
   std::unique_ptr<RenderDocAPI> renderdoc_api(new RenderDocAPI());
 
