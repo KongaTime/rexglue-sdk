@@ -26,6 +26,7 @@
 #include <rex/assert.h>
 #include <rex/cvar.h>
 #include <rex/dbg.h>
+#include <rex/platform.h>
 #include <rex/logging.h>
 #include <rex/math.h>
 #include <rex/graphics/util/draw.h>
@@ -2920,8 +2921,17 @@ void VulkanCommandProcessor::IssueSwap(uint32_t frontbuffer_ptr, uint32_t frontb
         // Need to submit all the commands before giving the image back to the
         // presenter so it can submit its own commands for displaying it to the
         // queue, and also need to submit the release barrier.
+#if REX_PLATFORM_PS5
+        // A failed submission isn't a refreshed image: the presenter keeps the
+        // last good one rather than painting one whose commands never ran
+        // (TheSimpsonsGame-PS5-Builder, LoZazaMastro and contributors,
+        // tools/rexglue-sdk/src/graphics/vulkan/command_processor.cpp at
+        // 59e7086, BSD 3-Clause License, see LICENSE).
+        return EndSubmission(true);
+#else
         EndSubmission(true);
         return true;
+#endif
       });
 
   // End the frame even if did not present for any reason (the image refresher
