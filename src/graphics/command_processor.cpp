@@ -359,8 +359,14 @@ void CommandProcessor::WriteRegister(uint32_t index, uint32_t value) {
 
   // Volatile for the WAIT_REG_MEM loop.
   const_cast<volatile uint32_t&>(regs.values[index]) = value;
-  if (!regs.GetRegisterInfo(index)) {
-    REXGPU_DEBUG("GPU: Write to unknown register ({:04X} = {:08X})", index, value);
+  // The register table is looked up only for the debug message: a switch
+  // over every register for every register write is a large share of a
+  // command processor's time on a slow host when nothing is logged.
+  {
+    static auto* const gpu_logger = ::rex::GetLoggerRaw(::rex::log::gpu());
+    if (gpu_logger && gpu_logger->should_log(spdlog::level::debug) && !regs.GetRegisterInfo(index)) {
+      REXGPU_DEBUG("GPU: Write to unknown register ({:04X} = {:08X})", index, value);
+    }
   }
 
   // Scratch register writeback.
