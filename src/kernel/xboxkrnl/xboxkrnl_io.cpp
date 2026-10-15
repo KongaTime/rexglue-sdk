@@ -274,6 +274,12 @@ u32 NtReadFile_entry(u32 file_handle, u32 event_handle, mapped_void apc_routine_
     io_status_block->status = result;
     io_status_block->information = 0;
   }
+  // A read that fails is what a game reports as a damaged disc: name the file
+  // (an open that fails is already logged, by NtCreateFile)
+  if (XFAILED(result) && file) {
+    REXKRNL_IMPORT_FAIL("NtReadFile", "'{}' len={:#x} offset={} -> {:#x}", file->path(), (uint32_t)buffer_length,
+                        byte_offset_ptr ? (int64_t)byte_offset : -1, result);
+  }
 
   if (ev && signal_event) {
     ev->Set(0, false);
@@ -370,6 +376,9 @@ u32 NtReadFileScatter_entry(u32 file_handle, u32 event_handle, mapped_void apc_r
   if (XFAILED(result) && io_status_block) {
     io_status_block->status = result;
     io_status_block->information = 0;
+  }
+  if (XFAILED(result) && file) {
+    REXKRNL_IMPORT_FAIL("NtReadFileScatter", "'{}' len={:#x} -> {:#x}", file->path(), (uint32_t)length, result);
   }
 
   if (ev && signal_event) {
